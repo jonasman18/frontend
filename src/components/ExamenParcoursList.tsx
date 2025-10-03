@@ -35,22 +35,25 @@ const ExamenParcoursList: React.FC = () => {
   };
 
   const handleSave = (ep: ExamenParcours) => {
-    ApiService.saveExamenParcours(ep).then((saved) => {
-      if (editing) {
-        setAssociations((prev) =>
-          prev.map((a) =>
-            a.id.idExamen === saved.id.idExamen &&
-            a.id.idParcours === saved.id.idParcours
-              ? saved
-              : a
-          )
-        );
-      } else {
-        setAssociations((prev) => [...prev, saved]);
-      }
-      setShowForm(false);
-      setEditing(null);
-    });
+    ApiService.saveExamenParcours(ep, editing?.id) // ✅ oldId si édition
+      .then((saved) => {
+        if (editing) {
+          // Mettre à jour la ligne existante
+          setAssociations((prev) =>
+            prev.map((a) =>
+              a.id.idExamen === editing.id.idExamen &&
+              a.id.idParcours === editing.id.idParcours
+                ? saved
+                : a
+            )
+          );
+        } else {
+          // Ajouter une nouvelle association
+          setAssociations((prev) => [...prev, saved]);
+        }
+        setShowForm(false);
+        setEditing(null);
+      });
   };
 
   return (
@@ -67,7 +70,7 @@ const ExamenParcoursList: React.FC = () => {
           ...a,
           uid: `${a.id.idExamen}-${a.id.idParcours}`, // 🔑 clé stable
         }))}
-        idKey="uid" // ✅ on utilise notre clé composite
+        idKey="uid"
         onAdd={() => {
           setEditing(null);
           setShowForm(true);
