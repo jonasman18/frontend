@@ -1,4 +1,4 @@
-import type { Repartition } from "./Repartition";
+
 
 export interface Examen {
   idExamen?: number; // optionnel
@@ -16,5 +16,4 @@ export interface Examen {
   duree?: number;
   numeroSalle?: string;
   session?: string;
-  repartition?: Repartition;
 }

@@ -12,7 +12,7 @@ import ExamenParcoursList from "./components/ExamenParcoursList";
 import RepartitionList from "./components/RepartitionList";
 import RepartirList from "./components/RepartirList";
 import RepartitionParSalleList from "./components/RepartitionParSalleList";
-import SurveillancePlanning from "./components/SurveillancePlanning";
+//import SurveillancePlanning from "./components/SurveillancePlanning";
 
 
 function App() {
@@ -67,7 +67,7 @@ function App() {
             <Route path="/repartitions" element={<RepartitionList />} />
             <Route path="/repartir" element={<RepartirList />} />
             <Route path="/repartition-salle" element={<RepartitionParSalleList />} />
-            <Route path="/planning-surveillance" element={<SurveillancePlanning />} />
+            
           </Routes>
         </div>
       </div>

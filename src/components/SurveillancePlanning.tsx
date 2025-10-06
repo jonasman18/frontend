@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+/* import React, { useEffect, useState } from "react";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
 import type { Surveiller } from "../models/Surveiller";
@@ -115,4 +115,4 @@ const SurveillancePlanning: React.FC = () => {
   );
 };
 
-export default SurveillancePlanning;
+export default SurveillancePlanning; */
