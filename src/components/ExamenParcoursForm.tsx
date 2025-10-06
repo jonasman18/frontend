@@ -2,78 +2,87 @@ import React, { useEffect, useState } from "react";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
 import type { Parcours } from "../models/Parcours";
-import type { ExamenParcours } from "../models/ExamenParcours";
 import ModalForm from "./ModalForm";
 
 interface Props {
-  examenParcours?: ExamenParcours;
-  onSave: (ep: ExamenParcours) => void;
+  examenId?: number;
+  onSave: () => void;
   onClose: () => void;
 }
 
-const ExamenParcoursForm: React.FC<Props> = ({
-  examenParcours,
-  onSave,
-  onClose,
-}) => {
+const ExamenParcoursForm: React.FC<Props> = ({ examenId, onSave, onClose }) => {
   const [examens, setExamens] = useState<Examen[]>([]);
   const [parcoursList, setParcoursList] = useState<Parcours[]>([]);
-  const [idExamen, setIdExamen] = useState<number>(
-    examenParcours?.id?.idExamen ?? examenParcours?.examen?.idExamen ?? 0
-  );
-  const [idParcours, setIdParcours] = useState<number>(
-    examenParcours?.id?.idParcours ?? examenParcours?.parcours?.idParcours ?? 0
-  );
+  const [selectedExam, setSelectedExam] = useState<number>(examenId ?? 0);
+  const [selectedParcours, setSelectedParcours] = useState<number[]>([]);
+  const [hadAssociations, setHadAssociations] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Charger examens + parcours + associations existantes
   useEffect(() => {
     setLoading(true);
     Promise.all([ApiService.getExamens(), ApiService.getParcours()])
-      .then(([examData, parcData]) => {
+      .then(async ([examData, parcData]) => {
         setExamens(examData ?? []);
         setParcoursList(parcData ?? []);
+
+        if (examenId) {
+          const all = await ApiService.getExamenParcours();
+          const current = all.filter((a) => a.examen?.idExamen === examenId);
+          setSelectedParcours(current.map((c) => c.parcours?.idParcours ?? 0));
+          setHadAssociations(current.length > 0);
+        }
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [examenId]);
 
+  // Toggle sélection parcours
+  const toggleParcours = (id: number) => {
+    setSelectedParcours((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // Soumission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!idExamen || !idParcours) {
-      alert("Veuillez sélectionner un examen et un parcours");
+    if (!selectedExam) {
+      alert("Veuillez sélectionner un examen.");
       return;
     }
 
-    const payload: ExamenParcours = {
-      id: { idExamen, idParcours },
-      examen: { idExamen } as any,
-      parcours: { idParcours } as any,
-    };
-
-    onSave(payload);
+    ApiService.updateExamenParcoursGlobal(selectedExam, selectedParcours)
+      .then(() => {
+        alert(
+          hadAssociations
+            ? "✅ Mise à jour des parcours réussie !"
+            : "✅ Association ajoutée avec succès !"
+        );
+        onSave();
+        onClose();
+      })
+      .catch(() => alert("❌ Erreur lors de la mise à jour globale."));
   };
 
   return (
     <ModalForm
-      title={
-        examenParcours
-          ? "Modifier Association Examen ↔ Parcours"
-          : "Nouvelle Association Examen ↔ Parcours"
-      }
+      title="Associer des parcours à un examen"
       onClose={onClose}
       onSubmit={handleSubmit}
-      submitLabel={examenParcours ? "Mettre à jour" : "Associer"}
+      submitLabel="Enregistrer"
     >
       {loading ? (
-        <div className="text-center text-gray-300">Chargement des options...</div>
+        <div className="text-center text-gray-300">Chargement...</div>
       ) : (
         <>
-          {/* Sélecteur Examen */}
+          {/* Sélecteur d’examen */}
           <div>
             <label className="block text-sm font-medium">Examen</label>
             <select
-              value={idExamen}
-              onChange={(e) => setIdExamen(Number(e.target.value))}
+              value={selectedExam}
+              onChange={(e) => setSelectedExam(Number(e.target.value))}
+              disabled={!!examenId}
               className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
             >
               <option value={0}>-- Sélectionner un examen --</option>
@@ -85,21 +94,24 @@ const ExamenParcoursForm: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Sélecteur Parcours */}
-          <div>
-            <label className="block text-sm font-medium">Parcours</label>
-            <select
-              value={idParcours}
-              onChange={(e) => setIdParcours(Number(e.target.value))}
-              className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
-            >
-              <option value={0}>-- Sélectionner un parcours --</option>
+          {/* Sélecteur multi-parcours */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-1">Parcours</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
               {parcoursList.map((p) => (
-                <option key={p.idParcours} value={p.idParcours}>
-                  {p.codeParcours} — {p.libelleParcours}
-                </option>
+                <label
+                  key={p.idParcours}
+                  className="flex items-center gap-2 cursor-pointer bg-emerald-800 rounded-md px-2 py-1 hover:bg-emerald-700 transition"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedParcours.includes(p.idParcours ?? 0)}
+                    onChange={() => toggleParcours(p.idParcours ?? 0)}
+                  />
+                  {p.codeParcours}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
         </>
       )}

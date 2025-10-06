@@ -1,3 +1,34 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes diagonalShift {
+  0% {
+    background: linear-gradient(-155deg, #064e3b 50%, white 50%);
+  }
+  50% {
+    background: linear-gradient(-155deg, #047857 48%, #f9fafb 52%);
+  }
+  100% {
+    background: linear-gradient(-155deg, #064e3b 50%, white 50%);
+  }
+}
+
+.crossed-diagonal-bg {
+    position: relative;
+    min-height: 100vh;
+    background: linear-gradient(
+        155deg,
+        #064e3b 0%, #064e3b 50%,
+        transparent 50%, transparent 100%
+    ),
+    linear-gradient(
+        -155deg,
+        #10b981 0%, #10b981 50%,
+        transparent 50%
+    );
+    background-blend-mode: overlay;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+

@@ -9,11 +9,16 @@ import SalleList from "./components/SalleList";
 import EnseignerList from "./components/EnseignerList";
 import SurveillerList from "./components/SurveillerList";
 import ExamenParcoursList from "./components/ExamenParcoursList";
+import RepartitionList from "./components/RepartitionList";
+import RepartirList from "./components/RepartirList";
+import RepartitionParSalleList from "./components/RepartitionParSalleList";
+import SurveillancePlanning from "./components/SurveillancePlanning";
+
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-emerald-900 text-white">
+      <div className="min-h-screen bg-green-500 text-white crossed-diagonal-bg">
         {/* Navbar */}
         <nav className="flex flex-wrap justify-center gap-4 p-4 bg-emerald-800 shadow-lg">
           {[
@@ -27,6 +32,10 @@ function App() {
             { to: "/surveillants", label: "Surveillants" },
             { to: "/surveiller", label: "Surveillance" },
             { to: "/repartitions", label: "Répartitions" },
+            { to: "/repartir", label: "Répartir" },
+            { to: "/repartition-salle", label: "Répartition par Salle" },
+            { to: "/planning-surveillance", label: "Planning Surveillance" },
+
           ].map((item) => (
             <NavLink
               key={item.to}
@@ -55,6 +64,10 @@ function App() {
             <Route path="/salles" element={<SalleList />} />
             <Route path="/enseigner" element={<EnseignerList />} />
             <Route path="/surveiller" element={<SurveillerList />} />
+            <Route path="/repartitions" element={<RepartitionList />} />
+            <Route path="/repartir" element={<RepartirList />} />
+            <Route path="/repartition-salle" element={<RepartitionParSalleList />} />
+            <Route path="/planning-surveillance" element={<SurveillancePlanning />} />
           </Routes>
         </div>
       </div>

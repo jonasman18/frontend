@@ -2,35 +2,65 @@ import React, { useEffect, useState } from "react";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
 import type { Surveillant } from "../models/Surveillant";
+import type { Surveiller } from "../models/Surveiller";
 import ModalForm from "./ModalForm";
 
 interface SurveillerFormProps {
+  surveiller?: Surveiller; // si on édite une association existante
   onSave: (idExamen: number, idSurveillant: number) => void;
   onClose: () => void;
 }
 
-const SurveillerForm: React.FC<SurveillerFormProps> = ({ onSave, onClose }) => {
+const SurveillerForm: React.FC<SurveillerFormProps> = ({
+  surveiller,
+  onSave,
+  onClose,
+}) => {
   const [examens, setExamens] = useState<Examen[]>([]);
   const [surveillants, setSurveillants] = useState<Surveillant[]>([]);
   const [idExamen, setIdExamen] = useState<number>(0);
   const [idSurveillant, setIdSurveillant] = useState<number>(0);
 
+  // 🔹 Charger les données
   useEffect(() => {
-    ApiService.getExamens().then(setExamens);
-    ApiService.getSurveillants().then(setSurveillants);
+    Promise.all([ApiService.getExamens(), ApiService.getSurveillants()]).then(
+      ([examData, survData]) => {
+        setExamens(examData);
+        setSurveillants(survData);
+      }
+    );
   }, []);
+
+  // 🔹 Préremplir si édition
+  useEffect(() => {
+    if (surveiller) {
+      setIdExamen(surveiller.examen?.idExamen ?? 0);
+      setIdSurveillant(surveiller.surveillant?.idSurveillant ?? 0);
+    }
+  }, [surveiller]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (idExamen && idSurveillant) {
-      onSave(idExamen, idSurveillant);
-    } else {
+
+    if (!idExamen || !idSurveillant) {
       alert("Veuillez sélectionner un examen et un surveillant !");
+      return;
     }
+
+    onSave(idExamen, idSurveillant);
   };
 
   return (
-    <ModalForm title="Associer un Surveillant à un Examen" onClose={onClose} onSubmit={handleSubmit} submitLabel="Associer">
+    <ModalForm
+      title={
+        surveiller
+          ? "Modifier l’association Examen ↔ Surveillant"
+          : "Associer un Surveillant à un Examen"
+      }
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      submitLabel={surveiller ? "Modifier" : "Associer"}
+    >
       <div>
         <label className="block text-sm font-medium">Examen</label>
         <select
@@ -46,6 +76,7 @@ const SurveillerForm: React.FC<SurveillerFormProps> = ({ onSave, onClose }) => {
           ))}
         </select>
       </div>
+
       <div>
         <label className="block text-sm font-medium">Surveillant</label>
         <select
@@ -56,7 +87,7 @@ const SurveillerForm: React.FC<SurveillerFormProps> = ({ onSave, onClose }) => {
           <option value={0}>-- Sélectionner --</option>
           {surveillants.map((s) => (
             <option key={s.idSurveillant} value={s.idSurveillant}>
-              {s.nomSurveillant}
+              {s.nomSurveillant} — Salle {s.numeroSalle}
             </option>
           ))}
         </select>

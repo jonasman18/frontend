@@ -1,101 +1,110 @@
-import React, { useEffect, useState } from 'react';
-import { ApiService } from '../services/ApiService';
-import type { Parcours } from '../models/Parcours';
-import ParcoursForm from './ParcoursForm';
+import React, { useEffect, useState } from "react";
+import { ApiService } from "../services/ApiService";
+import type { Parcours } from "../models/Parcours";
+import ParcoursForm from "./ParcoursForm";
+import TableList from "./TableList";
 
 const ParcoursList: React.FC = () => {
   const [parcours, setParcours] = useState<Parcours[]>([]);
+  const [filteredParcours, setFilteredParcours] = useState<Parcours[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingParcours, setEditingParcours] = useState<Parcours | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 🔹 Chargement initial
   useEffect(() => {
     ApiService.getParcours()
-      .then(data => setParcours(data))
-      .catch(() => setError('Erreur chargement parcours'))
+      .then((data) => {
+        setParcours(data);
+        setFilteredParcours(data);
+      })
+      .catch(() => setError("Erreur lors du chargement des parcours"))
       .finally(() => setLoading(false));
   }, []);
 
+  // 🔍 Recherche dynamique
+  useEffect(() => {
+    const term = searchTerm.toLowerCase();
+    setFilteredParcours(
+      parcours.filter(
+        (p) =>
+          p.codeParcours?.toLowerCase().includes(term) ||
+          p.libelleParcours?.toLowerCase().includes(term) ||
+          p.idParcours?.toString().includes(term)
+      )
+    );
+  }, [searchTerm, parcours]);
+
+  // 🔧 Suppression
   const handleDelete = (id: number) => {
-    if (confirm('Confirmer la suppression ?')) {
+    if (confirm("Confirmer la suppression ?")) {
       ApiService.deleteParcours(id)
-        .then(() => setParcours(parcours.filter(p => p.idParcours !== id)))
-        .catch(() => alert('Erreur lors de la suppression'));
+        .then(() =>
+          setParcours((prev) => prev.filter((p) => p.idParcours !== id))
+        )
+        .catch(() => alert("Erreur lors de la suppression"));
     }
   };
 
-  const handleEdit = (parcours: Parcours) => {
-    setEditingParcours(parcours);
-    setShowForm(true);
-  };
-
-  const handleAdd = () => {
-    setEditingParcours(null);
-    setShowForm(true);
-  };
-
-  const handleCloseForm = () => {
-    setShowForm(false);
-    setEditingParcours(null);
-  };
-
-  const handleSave = (parcoursToSave: Parcours) => {
-    ApiService.saveParcours(parcoursToSave)
-      .then(saved => {
+  // 💾 Sauvegarde
+  const handleSave = (p: Parcours) => {
+    ApiService.saveParcours(p)
+      .then((saved) => {
         if (editingParcours) {
-          setParcours(prevParcours => prevParcours.map(p => p.idParcours === saved.idParcours ? saved : p));
+          setParcours((prev) =>
+            prev.map((x) =>
+              x.idParcours === saved.idParcours ? saved : x
+            )
+          );
         } else {
-          setParcours(prevParcours => [...prevParcours, saved]);
+          setParcours((prev) => [...prev, saved]);
         }
-        handleCloseForm();
+        setShowForm(false);
+        setEditingParcours(null);
       })
-      .catch(() => alert('Erreur sauvegarde parcours'));
+      .catch(() => alert("Erreur lors de la sauvegarde"));
   };
 
-  if (loading) return <div>Chargement des parcours...</div>;
-  if (error) return <div style={{ color: 'red' }}>{error}</div>;
+  if (loading)
+    return <div className="text-center text-gray-200">Chargement des parcours...</div>;
+  if (error)
+    return <div className="text-center text-red-400">Erreur : {error}</div>;
 
   return (
-    <div>
-      <h1>Liste des Parcours</h1>
-      <button onClick={handleAdd} style={{ backgroundColor: '#3498db', color: 'white', padding: '10px', border: 'none', borderRadius: '5px' }}>
-        Ajouter un parcours
-      </button>
+    <div className="space-y-4">
+      
 
-      <table style={{ borderCollapse: 'collapse', width: '100%', marginTop: '20px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#3498db', color: 'white' }}>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>ID</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Code</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Libellé</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {parcours.map(p => (
-            <tr key={p.idParcours}>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{p.idParcours}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{p.codeParcours}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{p.libelleParcours}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                <button onClick={() => handleEdit(p)} style={{ backgroundColor: '#2ecc71', color: 'white', padding: '5px', border: 'none', borderRadius: '3px', marginRight: '5px' }}>
-                  Modifier
-                </button>
-                <button onClick={() => handleDelete(p.idParcours!)} style={{ backgroundColor: '#e74c3c', color: 'white', padding: '5px', border: 'none', borderRadius: '3px' }}>
-                  Supprimer
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* 🧾 Tableau principal */}
+      <TableList
+        title="Liste des Parcours"
+        columns={[
+          { key: "idParcours", label: "ID" },
+          { key: "codeParcours", label: "Code" },
+          { key: "libelleParcours", label: "Libellé" },
+        ]}
+        data={filteredParcours}
+        idKey="idParcours"
+        onAdd={() => {
+          setEditingParcours(null);
+          setShowForm(true);
+        }}
+        onEdit={(item) => {
+          setEditingParcours(item);
+          setShowForm(true);
+        }}
+        onDelete={(id) => handleDelete(Number(id))}
+      />
 
       {showForm && (
         <ParcoursForm
           parcours={editingParcours ?? undefined}
           onSave={handleSave}
-          onClose={handleCloseForm}
+          onClose={() => {
+            setShowForm(false);
+            setEditingParcours(null);
+          }}
         />
       )}
     </div>

@@ -1,103 +1,122 @@
-import React, { useEffect, useState } from 'react';
-import { ApiService } from '../services/ApiService';
-import type { Surveillant } from '../models/Surveillant';
-import SurveillantForm from './SurveillantForm';
+import React, { useEffect, useState } from "react";
+import { ApiService } from "../services/ApiService";
+import type { Surveillant } from "../models/Surveillant";
+import SurveillantForm from "./SurveillantForm";
+import TableList from "./TableList";
 
 const SurveillantList: React.FC = () => {
   const [surveillants, setSurveillants] = useState<Surveillant[]>([]);
+  const [filteredSurveillants, setFilteredSurveillants] = useState<Surveillant[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [editingSurveillant, setEditingSurveillant] = useState<Surveillant | null>(null);
+  const [editing, setEditing] = useState<Surveillant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 🔹 Chargement initial
   useEffect(() => {
     ApiService.getSurveillants()
-      .then(data => setSurveillants(data))
-      .catch(() => setError('Erreur chargement surveillants'))
+      .then((data) => {
+        setSurveillants(data);
+        setFilteredSurveillants(data);
+      })
+      .catch(() => setError("Erreur chargement surveillants"))
       .finally(() => setLoading(false));
   }, []);
 
+  // 🔍 Filtrage dynamique
+  useEffect(() => {
+    const term = searchTerm.toLowerCase();
+    setFilteredSurveillants(
+      surveillants.filter(
+        (s) =>
+          s.nomSurveillant?.toLowerCase().includes(term) ||
+          s.groupeSurveillant?.toLowerCase().includes(term) ||
+          s.numeroSalle?.toLowerCase().includes(term) ||
+          String(s.idSurveillant).includes(term)
+      )
+    );
+  }, [searchTerm, surveillants]);
+
+  // 🔹 Suppression
   const handleDelete = (id: number) => {
-    if (confirm('Confirmer la suppression ?')) {
+    if (confirm("Confirmer la suppression ?")) {
       ApiService.deleteSurveillant(id)
-        .then(() => setSurveillants(surveillants.filter(s => s.idSurveillant !== id)))
-        .catch(() => alert('Erreur lors de la suppression'));
+        .then(() =>
+          setSurveillants((prev) => prev.filter((s) => s.idSurveillant !== id))
+        )
+        .catch(() => alert("Erreur lors de la suppression"));
     }
   };
 
-  const handleEdit = (surveillant: Surveillant) => {
-    setEditingSurveillant(surveillant);
-    setShowForm(true);
-  };
-
-  const handleAdd = () => {
-    setEditingSurveillant(null);
-    setShowForm(true);
-  };
-
-  const handleCloseForm = () => {
-    setShowForm(false);
-    setEditingSurveillant(null);
-  };
-
-  const handleSave = (surveillant: Surveillant) => {
-    ApiService.saveSurveillant(surveillant)
-      .then(saved => {
-        if (editingSurveillant) {
-          setSurveillants(surveillants.map(s => s.idSurveillant === saved.idSurveillant ? saved : s));
+  // 🔹 Sauvegarde
+  const handleSave = (surv: Surveillant) => {
+    ApiService.saveSurveillant(surv)
+      .then((saved) => {
+        if (editing) {
+          setSurveillants((prev) =>
+            prev.map((s) =>
+              s.idSurveillant === saved.idSurveillant ? saved : s
+            )
+          );
         } else {
-          setSurveillants([...surveillants, saved]);
+          setSurveillants((prev) => [...prev, saved]);
         }
-        handleCloseForm();
+        setShowForm(false);
+        setEditing(null);
       })
-      .catch(() => alert('Erreur sauvegarde surveillant'));
+      .catch(() => alert("Erreur sauvegarde surveillant"));
   };
 
-  if (loading) return <div>Chargement des surveillants...</div>;
-  if (error) return <div style={{ color: 'red' }}>{error}</div>;
+  if (loading)
+    return <div className="text-center text-gray-300">Chargement des surveillants...</div>;
+  if (error)
+    return <div className="text-center text-red-400">Erreur : {error}</div>;
 
   return (
-    <div>
-      <h1>Liste des Surveillants</h1>
-      <button onClick={handleAdd} style={{ backgroundColor: '#3498db', color: 'white', padding: '10px', border: 'none', borderRadius: '5px' }}>
-        Ajouter un surveillant
-      </button>
+    <div className="space-y-4">
+      {/* 🔍 Barre de recherche */}
+      <div className="flex justify-between items-center mb-4">
+        <input
+          type="text"
+          placeholder="Rechercher par nom, groupe ou salle..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="px-4 py-2 rounded-md text-gray-900 w-1/3 border border-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none transition-all duration-300"
+        />
+      </div>
 
-      <table style={{ borderCollapse: 'collapse', width: '100%', marginTop: '20px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#3498db', color: 'white' }}>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>ID</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Nom</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Groupe</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Salle</th>
-            <th style={{ padding: '10px', border: '1px solid #ddd' }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {surveillants.map(s => (
-            <tr key={s.idSurveillant}>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{s.idSurveillant}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{s.nomSurveillant}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{s.groupeSurveillant}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>{s.numeroSalle}</td>
-              <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                <button onClick={() => handleEdit(s)} style={{ backgroundColor: '#2ecc71', color: 'white', padding: '5px', border: 'none', borderRadius: '3px', marginRight: '5px' }}>
-                  Modifier
-                </button>
-                <button onClick={() => handleDelete(s.idSurveillant!)} style={{ backgroundColor: '#e74c3c', color: 'white', padding: '5px', border: 'none', borderRadius: '3px' }}>
-                  Supprimer
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* 🧾 Table des surveillants */}
+      <TableList
+        title="Liste des Surveillants"
+        columns={[
+          { key: "idSurveillant", label: "ID" },
+          { key: "nomSurveillant", label: "Nom" },
+          { key: "groupeSurveillant", label: "Groupe" },
+          { key: "numeroSalle", label: "Salle" },
+        ]}
+        data={filteredSurveillants}
+        idKey="idSurveillant"
+        onAdd={() => {
+          setEditing(null);
+          setShowForm(true);
+        }}
+        onEdit={(item) => {
+          setEditing(item);
+          setShowForm(true);
+        }}
+        onDelete={(id) => handleDelete(Number(id))}
+      />
 
+      {/* 🧩 Formulaire modal */}
       {showForm && (
         <SurveillantForm
-          surveillant={editingSurveillant ?? undefined}
+          surveillant={editing ?? undefined}
           onSave={handleSave}
-          onClose={handleCloseForm}
+          onClose={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
         />
       )}
     </div>
