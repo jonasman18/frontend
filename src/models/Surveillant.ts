@@ -3,4 +3,5 @@ export interface Surveillant {
   nomSurveillant: string;
   groupeSurveillant: string;
   numeroSalle?: string;
+  contact?: string;
 }

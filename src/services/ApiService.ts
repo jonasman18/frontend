@@ -349,6 +349,58 @@ static async getRepartitionByExamen(idExamen: number) {
 }
 
 
+// Dans ApiService.ts
+static getPlanningSurveillance() {
+  return axios.get(`${API_BASE_URL}/planning-surveillance`).then(res => res.data);
+}
+
+
+// --- PLANNING DE SURVEILLANCE ---
+static getPlanningByExamen(idExamen: number) {
+  return axios
+    .get(`${API_BASE_URL}/planning-surveillance/examen/${idExamen}`)
+    .then((res) => res.data);
+}
+
+static generatePlanning(idExamen: number) {
+  return axios
+    .post(`${API_BASE_URL}/planning-surveillance/generate/${idExamen}`)
+    .then((res) => res.data);
+}
+
+
+// ✅ Récupérer un seul par ID
+static getPlanningById(id: number) {
+  return axios.get(`${API_BASE_URL}/planning-surveillance/id/${id}`).then(res => res.data);
+}
+
+// ✅ Enregistrer / modifier
+static savePlanningSurveillance(planning: any) {
+  if (planning.idPlanning) {
+    return axios.put(`${API_BASE_URL}/planning-surveillance/${planning.idPlanning}`, planning).then(res => res.data);
+  } else {
+    return axios.post(`${API_BASE_URL}/planning-surveillance`, planning).then(res => res.data);
+  }
+}
+
+// ✅ Supprimer
+static deletePlanningSurveillance(id: number) {
+  return axios.delete(`${API_BASE_URL}/planning-surveillance/${id}`);
+}
+
+// --- Dans ApiService.ts ---
+static getParcoursByExamen(idExamen: number) {
+  return axios
+    .get(`${API_BASE_URL}/examenparcours/idExamen/${idExamen}`)
+    .then((res) => res.data);
+}
+
+static getSurveillantsBySalle(numeroSalle: string) {
+  return axios
+    .get(`${API_BASE_URL}/surveillants/by-salle/${numeroSalle}`)
+    .then((res) => res.data);
+}
+
 
 
 }

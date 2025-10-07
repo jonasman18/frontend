@@ -24,7 +24,7 @@ const SurveillantList: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  // 🔍 Filtrage dynamique
+  // 🔍 Filtrage dynamique (ajout de contact ici)
   useEffect(() => {
     const term = searchTerm.toLowerCase();
     setFilteredSurveillants(
@@ -33,6 +33,7 @@ const SurveillantList: React.FC = () => {
           s.nomSurveillant?.toLowerCase().includes(term) ||
           s.groupeSurveillant?.toLowerCase().includes(term) ||
           s.numeroSalle?.toLowerCase().includes(term) ||
+          s.contact?.toLowerCase().includes(term) || // ✅ Ajout ici
           String(s.idSurveillant).includes(term)
       )
     );
@@ -49,7 +50,7 @@ const SurveillantList: React.FC = () => {
     }
   };
 
-  // 🔹 Sauvegarde
+  // 🔹 Sauvegarde (ajout/modif)
   const handleSave = (surv: Surveillant) => {
     ApiService.saveSurveillant(surv)
       .then((saved) => {
@@ -79,7 +80,7 @@ const SurveillantList: React.FC = () => {
       <div className="flex justify-between items-center mb-4">
         <input
           type="text"
-          placeholder="Rechercher par nom, groupe ou salle..."
+          placeholder="Rechercher par nom, groupe, salle ou contact..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="px-4 py-2 rounded-md text-gray-900 w-1/3 border border-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none transition-all duration-300"
@@ -94,6 +95,7 @@ const SurveillantList: React.FC = () => {
           { key: "nomSurveillant", label: "Nom" },
           { key: "groupeSurveillant", label: "Groupe" },
           { key: "numeroSalle", label: "Salle" },
+          { key: "contact", label: "Contact" }, // ✅ nouvelle colonne
         ]}
         data={filteredSurveillants}
         idKey="idSurveillant"

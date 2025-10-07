@@ -13,7 +13,8 @@ import RepartitionList from "./components/RepartitionList";
 import RepartirList from "./components/RepartirList";
 import RepartitionParSalleList from "./components/RepartitionParSalleList";
 //import SurveillancePlanning from "./components/SurveillancePlanning";
-
+import PlanningSurveillanceList from "./components/PlanningSurveillanceList";
+//import PlanningSurveillanceTableView from "./components/PlanningSurveillanceTableView";
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
             { to: "/repartir", label: "Répartir" },
             { to: "/repartition-salle", label: "Répartition par Salle" },
             { to: "/planning-surveillance", label: "Planning Surveillance" },
+            { to: "/planning-surveillance-view", label: "Vue Planning" },
 
           ].map((item) => (
             <NavLink
@@ -67,7 +69,8 @@ function App() {
             <Route path="/repartitions" element={<RepartitionList />} />
             <Route path="/repartir" element={<RepartirList />} />
             <Route path="/repartition-salle" element={<RepartitionParSalleList />} />
-            
+            <Route path="/planning-surveillance" element={<PlanningSurveillanceList />} />
+   
           </Routes>
         </div>
       </div>
