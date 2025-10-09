@@ -116,15 +116,20 @@ export class ApiService {
     return axios.get(`${API_BASE_URL}/surveillants/${id}`).then((res) => res.data);
   }
 
-  static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
-    if (surveillant.idSurveillant) {
-      return axios
-        .put(`${API_BASE_URL}/surveillants/${surveillant.idSurveillant}`, surveillant)
-        .then((res) => res.data);
-    } else {
-      return axios.post(`${API_BASE_URL}/surveillants`, surveillant).then((res) => res.data);
-    }
+static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
+  if (surveillant.idSurveillant && surveillant.idSurveillant > 0) {
+    // Modification
+    return axios
+      .put(`${API_BASE_URL}/surveillants/${surveillant.idSurveillant}`, surveillant)
+      .then((res) => res.data);
+  } else {
+    // Ajout
+    return axios
+      .post(`${API_BASE_URL}/surveillants`, surveillant)
+      .then((res) => res.data);
   }
+}
+
 
   static deleteSurveillant(id: number): Promise<void> {
     return axios.delete(`${API_BASE_URL}/surveillants/${id}`).then(() => {});
@@ -374,14 +379,7 @@ static getPlanningById(id: number) {
   return axios.get(`${API_BASE_URL}/planning-surveillance/id/${id}`).then(res => res.data);
 }
 
-// ✅ Enregistrer / modifier
-static savePlanningSurveillance(planning: any) {
-  if (planning.idPlanning) {
-    return axios.put(`${API_BASE_URL}/planning-surveillance/${planning.idPlanning}`, planning).then(res => res.data);
-  } else {
-    return axios.post(`${API_BASE_URL}/planning-surveillance`, planning).then(res => res.data);
-  }
-}
+
 
 // ✅ Supprimer
 static deletePlanningSurveillance(id: number) {
@@ -399,6 +397,55 @@ static getSurveillantsBySalle(numeroSalle: string) {
   return axios
     .get(`${API_BASE_URL}/surveillants/by-salle/${numeroSalle}`)
     .then((res) => res.data);
+}
+
+static updateExamenSalleGlobal(idExamen: number, salles: string[]) {
+  return axios.post("/examensalle/update-global", { idExamen, salles });
+}
+
+static getExamenSalle() {
+  return axios.get("/examensalle");
+}
+
+// --- PLANNING DE SURVEILLANCE ---
+static async savePlanningSurveillance(planning: any) {
+  // ✅ Si on a plusieurs salles détectées ou plusieurs surveillants à répartir
+  if (planning.sallesDetectees && planning.surveillantsDetectes) {
+    const promises: Promise<any>[] = [];
+
+    for (const [numSalle, listeSurv] of Object.entries(
+      planning.surveillantsDetectes
+    )) {
+      for (const sv of listeSurv as any[]) {
+        const item = {
+          examen: { idExamen: planning.examen.idExamen },
+          salle: { numeroSalle: numSalle },
+          surveillant: { idSurveillant: sv.idSurveillant },
+          dateExamen: planning.dateExamen,
+          heureDebut: planning.heureDebut,
+          heureFin: planning.heureFin,
+        };
+
+        // Chaque ligne correspond à une combinaison (examen + salle + surveillant)
+        promises.push(
+          axios.post(`${API_BASE_URL}/planning-surveillance`, item)
+        );
+      }
+    }
+
+    return Promise.all(promises).then((res) => res.map((r) => r.data));
+  }
+
+  // ✅ Sinon, simple enregistrement unique
+  if (planning.idPlanning) {
+    return axios
+      .put(`${API_BASE_URL}/planning-surveillance/${planning.idPlanning}`, planning)
+      .then((res) => res.data);
+  } else {
+    return axios
+      .post(`${API_BASE_URL}/planning-surveillance`, planning)
+      .then((res) => res.data);
+  }
 }
 
 

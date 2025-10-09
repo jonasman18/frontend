@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
 import type { Salle } from "../models/Salle";
-import type { Parcours } from "../models/Parcours";
 import type { Surveillant } from "../models/Surveillant";
 import type { PlanningSurveillance } from "../models/PlanningSurveillance";
 import ModalForm from "./ModalForm";
@@ -20,14 +19,16 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
 }) => {
   const [examens, setExamens] = useState<Examen[]>([]);
   const [salles, setSalles] = useState<Salle[]>([]);
-  const [parcours, setParcours] = useState<Parcours[]>([]);
   const [surveillants, setSurveillants] = useState<Surveillant[]>([]);
+  const [sallesDetectees, setSallesDetectees] = useState<Salle[]>([]);
+  const [surveillantsDetectes, setSurveillantsDetectes] = useState<
+    Record<string, Surveillant[]>
+  >({});
 
   const [formData, setFormData] = useState<PlanningSurveillance>(
     planning || {
       examen: undefined,
       salle: undefined,
-      parcours: undefined,
       surveillant: undefined,
       heureDebut: "",
       heureFin: "",
@@ -35,53 +36,91 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     }
   );
 
-  // 🔹 Charger les données nécessaires
+  // Charger les données initiales
   useEffect(() => {
-    ApiService.getExamens().then(setExamens);
-    ApiService.getSalles().then(setSalles);
-    ApiService.getParcours().then(setParcours);
-    ApiService.getSurveillants().then(setSurveillants);
+    Promise.all([
+      ApiService.getExamens(),
+      ApiService.getSalles(),
+      ApiService.getSurveillants(),
+    ]).then(([e, s, sv]) => {
+      setExamens(e);
+      setSalles(s);
+      setSurveillants(sv);
+    });
   }, []);
 
-  // 🔹 Détection automatique selon l’examen choisi
+  // 🔹 Détection automatique selon l’examen
   useEffect(() => {
     const ex = formData.examen;
     if (!ex?.idExamen) return;
 
-    // 🧩 Salle de l’examen
-    const salleAssociee = salles.find((s) => s.numeroSalle === ex.numeroSalle);
+    // 1️⃣ Salles liées à l’examen
+    const numerosSallesExamen = ex.numeroSalle
+      ? ex.numeroSalle.split(",").map((s) => s.trim())
+      : [];
 
-    // 🧩 Surveillants de cette salle
-    const surveillantsSalle = surveillants.filter(
-      (s) => s.numeroSalle === ex.numeroSalle
+    const sallesAssociees = salles.filter((s) =>
+      numerosSallesExamen.includes(s.numeroSalle)
     );
 
-    // 🧩 Parcours associé à cet examen via ExamenParcours
-    ApiService.getExamenParcours()
-      .then((list) => {
-        const ep = list.find((ep) => ep.examen?.idExamen === ex.idExamen);
-        const parcoursAssocie = ep?.parcours;
-        setFormData((prev) => ({
-          ...prev,
-          salle: salleAssociee || prev.salle,
-          parcours: parcoursAssocie || prev.parcours,
-          surveillant:
-            surveillantsSalle.length === 1
-              ? surveillantsSalle[0]
-              : prev.surveillant,
-          heureDebut: ex.heureDebut
-            ? ex.heureDebut.replace(" ", "T")
-            : prev.heureDebut,
-          heureFin: ex.heureFin
-            ? ex.heureFin.replace(" ", "T")
-            : prev.heureFin,
-          dateExamen: ex.dateExamen || prev.dateExamen,
-        }));
-      })
-      .catch(() => console.warn("Erreur récupération parcours examen"));
+    // 2️⃣ Distribution équitable : chaque surveillant ne surveille qu'une salle
+    const distribution: Record<string, Surveillant[]> = {};
+    const surveillantsDejaAffectes = new Set<number>();
+
+    // Préparer les salles par ordre de nombre max de surveillants
+    const sallesTriees = [...sallesAssociees].sort(
+      (a, b) => (a.nbrSurveillant ?? 3) - (b.nbrSurveillant ?? 3)
+    );
+
+    // Algorithme équitable : tour par tour
+    let round = 0;
+    let encoreDesPlaces = true;
+
+    while (encoreDesPlaces) {
+      encoreDesPlaces = false;
+      for (const salle of sallesTriees) {
+        const max = salle.nbrSurveillant ?? 3;
+        const affectes = distribution[salle.numeroSalle] ?? [];
+
+        if (affectes.length < max) {
+          // Trouver un surveillant compatible et libre
+          const compatible = surveillants.find((sv) => {
+            if (!sv.numeroSalle) return false;
+            const sallesSv = sv.numeroSalle
+              .split(",")
+              .map((num) => num.trim());
+            return (
+              sallesSv.includes(salle.numeroSalle) &&
+              !surveillantsDejaAffectes.has(sv.idSurveillant!)
+            );
+          });
+
+          if (compatible) {
+            affectes.push(compatible);
+            surveillantsDejaAffectes.add(compatible.idSurveillant!);
+            distribution[salle.numeroSalle] = affectes;
+            encoreDesPlaces = true;
+          }
+        }
+      }
+      round++;
+      if (round > 100) break; // sécurité anti-boucle infinie
+    }
+
+    // Appliquer les données
+    setSallesDetectees(sallesAssociees);
+    setSurveillantsDetectes(distribution);
+
+    setFormData((prev) => ({
+      ...prev,
+      salle: sallesAssociees.length === 1 ? sallesAssociees[0] : prev.salle,
+      heureDebut: ex.heureDebut?.replace(" ", "T") || prev.heureDebut,
+      heureFin: ex.heureFin?.replace(" ", "T") || prev.heureFin,
+      dateExamen: ex.dateExamen || prev.dateExamen,
+    }));
   }, [formData.examen, salles, surveillants]);
 
-  // 🔹 Gestion des changements
+  // Gestion de changement
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
@@ -93,27 +132,39 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // 🔹 Validation et envoi
+  // ✅ Enregistrement — un planning par salle
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !formData.examen ||
-      !formData.salle?.numeroSalle ||
-      !formData.surveillant?.idSurveillant
-    ) {
-      alert("Veuillez remplir tous les champs obligatoires !");
+    if (!formData.examen || sallesDetectees.length === 0) {
+      alert("Veuillez sélectionner un examen avec au moins une salle !");
       return;
     }
 
-    const planningToSave: PlanningSurveillance = {
-      ...formData,
-      heureDebut: formData.heureDebut || "",
-      heureFin: formData.heureFin || "",
-      dateExamen: formData.dateExamen || "",
-    };
+    // Générer un planning pour chaque salle
+    const planningsParSalle: PlanningSurveillance[] = sallesDetectees.map(
+      (salle) => {
+        const surveillantsSalle = surveillantsDetectes[salle.numeroSalle] || [];
+        return {
+          ...formData,
+          salle,
+          surveillants: surveillantsSalle,
+          examen: formData.examen!,
+          heureDebut: formData.heureDebut || "",
+          heureFin: formData.heureFin || "",
+          dateExamen: formData.dateExamen || "",
+        };
+      }
+    );
 
-    onSave(planningToSave);
+    console.log("🧾 Plannings à sauvegarder :", planningsParSalle);
+
+    Promise.all(planningsParSalle.map((p) => ApiService.savePlanningSurveillance(p)))
+      .then(() => {
+        alert("✅ Plannings enregistrés avec succès !");
+        onClose();
+      })
+      .catch(() => alert("❌ Erreur lors de la sauvegarde du planning."));
   };
 
   return (
@@ -145,7 +196,7 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
       </div>
 
       {/* Heures */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 mt-3">
         <div className="flex-1">
           <label className="block text-sm font-medium">Heure Début</label>
           <input
@@ -168,71 +219,61 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
         </div>
       </div>
 
-      {/* Salle */}
-      <div>
-        <label className="block text-sm font-medium">Salle</label>
-        <select
-          value={formData.salle?.numeroSalle || ""}
-          onChange={(e) => {
-            const salle = salles.find(
-              (s) => s.numeroSalle === e.target.value
-            );
-            handleSelectChange("salle", salle);
-          }}
-          className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1"
-        >
-          <option value="">-- Sélectionner --</option>
-          {salles.map((s) => (
-            <option key={s.numeroSalle} value={s.numeroSalle}>
-              {s.numeroSalle}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* 🏫 Salles détectées */}
+      {sallesDetectees.length > 0 && (
+        <div className="mt-4">
+          <label className="block text-sm font-medium mb-1">
+            Salles détectées :
+          </label>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {sallesDetectees.map((s) => (
+              <span
+                key={s.numeroSalle}
+                className="bg-emerald-700 px-3 py-1 rounded-full text-sm"
+              >
+                {s.numeroSalle} ({s.nbrSurveillant ?? 3} max)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {/* Parcours */}
-      <div>
-        <label className="block text-sm font-medium">Parcours</label>
-        <select
-          value={formData.parcours?.idParcours || ""}
-          onChange={(e) => {
-            const p = parcours.find(
-              (x) => x.idParcours === Number(e.target.value)
-            );
-            handleSelectChange("parcours", p);
-          }}
-          className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1"
-        >
-          <option value="">-- Sélectionner --</option>
-          {parcours.map((p) => (
-            <option key={p.idParcours} value={p.idParcours}>
-              {p.codeParcours}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Surveillant */}
-      <div>
-        <label className="block text-sm font-medium">Surveillant</label>
-        <select
-          value={formData.surveillant?.idSurveillant || ""}
-          onChange={(e) => {
-            const s = surveillants.find(
-              (x) => x.idSurveillant === Number(e.target.value)
-            );
-            handleSelectChange("surveillant", s);
-          }}
-          className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1"
-        >
-          <option value="">-- Sélectionner --</option>
-          {surveillants.map((s) => (
-            <option key={s.idSurveillant} value={s.idSurveillant}>
-              {s.nomSurveillant} ({s.numeroSalle})
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* 👩‍🏫 Répartition par salle */}
+      {Object.keys(surveillantsDetectes).length > 0 && (
+        <div className="mt-5">
+          <label className="block text-sm font-medium mb-2">
+            Répartition automatique des surveillants :
+          </label>
+          <table className="w-full border border-emerald-600 rounded-lg overflow-hidden text-sm text-white">
+            <thead className="bg-emerald-800">
+              <tr>
+                <th className="p-2 border border-emerald-700 text-left">Salle</th>
+                <th className="p-2 border border-emerald-700 text-left">
+                  Surveillants assignés
+                </th>
+                <th className="p-2 border border-emerald-700 text-center">
+                  Nombre
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(surveillantsDetectes).map(([numSalle, svList]) => (
+                <tr key={numSalle} className="hover:bg-emerald-700 transition">
+                  <td className="p-2 border border-emerald-700">{numSalle}</td>
+                  <td className="p-2 border border-emerald-700">
+                    {svList.length > 0
+                      ? svList.map((sv) => sv.nomSurveillant).join(", ")
+                      : "Aucun surveillant disponible"}
+                  </td>
+                  <td className="p-2 border border-emerald-700 text-center">
+                    {svList.length}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </ModalForm>
   );
 };
