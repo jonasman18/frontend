@@ -27,7 +27,7 @@
         #10b981 0%, #10b981 50%,
         transparent 50%
     );
-    background-blend-mode: overlay;
+    background-blend-mode: overlay; 
     background-size: cover;
     background-repeat: no-repeat;
 }

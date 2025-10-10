@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, NavLink } from "react-router-dom";
+import NeuralBackground from "./components/NeuralBackground";
 import ExamenList from "./components/ExamenList";
 import MatiereList from "./components/MatiereList";
 import EnseignantList from "./components/EnseignantList";
@@ -12,16 +13,15 @@ import ExamenParcoursList from "./components/ExamenParcoursList";
 import RepartitionList from "./components/RepartitionList";
 import RepartirList from "./components/RepartirList";
 import RepartitionParSalleList from "./components/RepartitionParSalleList";
-//import SurveillancePlanning from "./components/SurveillancePlanning";
 import PlanningSurveillanceList from "./components/PlanningSurveillanceList";
-//import PlanningSurveillanceTableView from "./components/PlanningSurveillanceTableView";
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-green-500 text-white crossed-diagonal-bg">
+      <div className="h-screen relative text-white"> {/* Classe appliquée : motif diagonal croisé visible en base */}
+        <NeuralBackground /> {/* Animation neurale en arrière-plan */}
         {/* Navbar */}
-        <nav className="flex flex-wrap justify-center gap-4 p-4 bg-emerald-800 shadow-lg">
+        <nav className="relative z-10 flex flex-wrap justify-center gap-4 p-4 bg-emerald-800 shadow-lg backdrop-blur-sm bg-opacity-90">
           {[
             { to: "/examens", label: "Examens" },
             { to: "/examenparcours", label: "Examens & Parcours" },
@@ -31,13 +31,10 @@ function App() {
             { to: "/parcours", label: "Parcours" },
             { to: "/salles", label: "Salles" },
             { to: "/surveillants", label: "Surveillants" },
-            { to: "/surveiller", label: "Surveillance" },
             { to: "/repartitions", label: "Répartitions" },
             { to: "/repartir", label: "Répartir" },
             { to: "/repartition-salle", label: "Répartition par Salle" },
             { to: "/planning-surveillance", label: "Planning Surveillance" },
-            { to: "/planning-surveillance-view", label: "Vue Planning" },
-
           ].map((item) => (
             <NavLink
               key={item.to}
@@ -53,8 +50,8 @@ function App() {
           ))}
         </nav>
 
-        {/* Contenu pleine largeur */}
-        <div className="w-full px-10 py-6">
+        {/* Contenu pleine largeur, scrollable */}
+        <div className="relative z-10 w-full px-10 py-6 overflow-y-auto"> {/* overflow-y-auto pour scroll vertical si contenu long */}
           <Routes>
             <Route path="/" element={<ExamenList />} />
             <Route path="/examens" element={<ExamenList />} />
@@ -70,7 +67,6 @@ function App() {
             <Route path="/repartir" element={<RepartirList />} />
             <Route path="/repartition-salle" element={<RepartitionParSalleList />} />
             <Route path="/planning-surveillance" element={<PlanningSurveillanceList />} />
-   
           </Routes>
         </div>
       </div>

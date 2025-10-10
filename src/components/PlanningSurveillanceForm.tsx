@@ -8,7 +8,7 @@ import ModalForm from "./ModalForm";
 
 interface PlanningSurveillanceFormProps {
   planning?: PlanningSurveillance;
-  onSave: (planning: PlanningSurveillance) => void;
+  onSave: (planning: PlanningSurveillance[]) => void;
   onClose: () => void;
 }
 
@@ -67,14 +67,12 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     const distribution: Record<string, Surveillant[]> = {};
     const surveillantsDejaAffectes = new Set<number>();
 
-    // Préparer les salles par ordre de nombre max de surveillants
     const sallesTriees = [...sallesAssociees].sort(
       (a, b) => (a.nbrSurveillant ?? 3) - (b.nbrSurveillant ?? 3)
     );
 
-    // Algorithme équitable : tour par tour
-    let round = 0;
     let encoreDesPlaces = true;
+    let round = 0;
 
     while (encoreDesPlaces) {
       encoreDesPlaces = false;
@@ -83,12 +81,9 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
         const affectes = distribution[salle.numeroSalle] ?? [];
 
         if (affectes.length < max) {
-          // Trouver un surveillant compatible et libre
           const compatible = surveillants.find((sv) => {
             if (!sv.numeroSalle) return false;
-            const sallesSv = sv.numeroSalle
-              .split(",")
-              .map((num) => num.trim());
+            const sallesSv = sv.numeroSalle.split(",").map((n) => n.trim());
             return (
               sallesSv.includes(salle.numeroSalle) &&
               !surveillantsDejaAffectes.has(sv.idSurveillant!)
@@ -104,10 +99,9 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
         }
       }
       round++;
-      if (round > 100) break; // sécurité anti-boucle infinie
+      if (round > 100) break;
     }
 
-    // Appliquer les données
     setSallesDetectees(sallesAssociees);
     setSurveillantsDetectes(distribution);
 
@@ -120,7 +114,7 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     }));
   }, [formData.examen, salles, surveillants]);
 
-  // Gestion de changement
+  // Gestion de changement simple
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
@@ -132,44 +126,37 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // ✅ Enregistrement — un planning par salle
-  const handleSubmit = (e: React.FormEvent) => {
+  // ✅ Soumission du formulaire
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.examen || sallesDetectees.length === 0) {
-      alert("Veuillez sélectionner un examen avec au moins une salle !");
+      alert("⚠️ Veuillez sélectionner un examen avec au moins une salle !");
       return;
     }
 
-    // Générer un planning pour chaque salle
-    const planningsParSalle: PlanningSurveillance[] = sallesDetectees.map(
-      (salle) => {
-        const surveillantsSalle = surveillantsDetectes[salle.numeroSalle] || [];
-        return {
-          ...formData,
-          salle,
-          surveillants: surveillantsSalle,
-          examen: formData.examen!,
-          heureDebut: formData.heureDebut || "",
-          heureFin: formData.heureFin || "",
-          dateExamen: formData.dateExamen || "",
-        };
-      }
-    );
+    try {
+      const result = await ApiService.savePlanningSurveillance({
+        examen: formData.examen,
+        sallesDetectees,
+        surveillantsDetectes,
+        dateExamen: formData.dateExamen,
+        heureDebut: formData.heureDebut,
+        heureFin: formData.heureFin,
+      });
 
-    console.log("🧾 Plannings à sauvegarder :", planningsParSalle);
-
-    Promise.all(planningsParSalle.map((p) => ApiService.savePlanningSurveillance(p)))
-      .then(() => {
-        alert("✅ Plannings enregistrés avec succès !");
-        onClose();
-      })
-      .catch(() => alert("❌ Erreur lors de la sauvegarde du planning."));
+      alert("✅ Plannings enregistrés avec succès !");
+      onSave(result);
+      onClose();
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde :", error);
+      alert("❌ Erreur lors de la sauvegarde du planning.");
+    }
   };
 
   return (
     <ModalForm
-      title={planning ? "Modifier le Planning" : "Ajouter au Planning"}
+      title={planning ? "Modifier le Planning" : "Ajouter un Planning"}
       onClose={onClose}
       onSubmit={handleSubmit}
     >
