@@ -25,12 +25,42 @@ export class ApiService {
   }
 
   static saveExamen(examen: Examen): Promise<Examen> {
+    const cleanedExamen = {
+      ...examen,
+      // On ne garde que les IDs côté backend
+      matiere: examen.matiere?.idMatiere
+        ? { idMatiere: examen.matiere.idMatiere }
+        : null,
+      niveau: examen.niveau?.idNiveau
+        ? { idNiveau: examen.niveau.idNiveau }
+        : null,
+
+      // Conversion de duree (float → BigDecimal compatible)
+      duree:
+        examen.duree && !isNaN(Number(examen.duree))
+          ? Number(examen.duree)
+          : 0,
+
+      // Heure et date bien envoyées au format attendu
+      heureDebut: examen.heureDebut ?? null,
+      heureFin: examen.heureFin ?? null,
+      dateExamen: examen.dateExamen ?? null,
+
+      // Salle(s)
+      numeroSalle: examen.numeroSalle ?? "",
+
+      // Session (string)
+      session: examen.session ?? "",
+    };
+
     if (examen.idExamen) {
       return axios
-        .put(`${API_BASE_URL}/examens/${examen.idExamen}`, examen)
+        .put(`${API_BASE_URL}/examens/${examen.idExamen}`, cleanedExamen)
         .then((res) => res.data);
     } else {
-      return axios.post(`${API_BASE_URL}/examens`, examen).then((res) => res.data);
+      return axios
+        .post(`${API_BASE_URL}/examens`, cleanedExamen)
+        .then((res) => res.data);
     }
   }
 

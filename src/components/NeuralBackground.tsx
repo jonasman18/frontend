@@ -273,10 +273,13 @@ const NeuralBackground: FC = () => {
       }
 
       draw(): void {
-        ctx.fillStyle = this.screen.color;
-        ctx.beginPath();
-        ctx.arc(this.screen.x, this.screen.y, this.screen.scale * this.size, 0, Tau);
-        ctx.fill();
+        const radius = Math.max(0, this.screen.scale * this.size); // Clamp radius to 0 to avoid negative
+        if (radius > 0) { // Skip drawing if radius is 0
+          ctx.fillStyle = this.screen.color;
+          ctx.beginPath();
+          ctx.arc(this.screen.x, this.screen.y, radius, 0, Tau);
+          ctx.fill();
+        }
       }
 
       setScreen(): void {
@@ -297,6 +300,8 @@ const NeuralBackground: FC = () => {
         this.screen.z = z;
         z += opts.depth;
 
+        // Clamp z to positive value to avoid negative scale
+        z = Math.max(z, 0.1); // Minimum z to prevent division by zero or negative
         this.screen.scale = opts.focalLength / z;
         this.screen.x = opts.vanishPoint.x + x * this.screen.scale;
         this.screen.y = opts.vanishPoint.y + y * this.screen.scale;
@@ -347,7 +352,7 @@ const NeuralBackground: FC = () => {
           this.x = this.ox + this.dx * this.proportion;
           this.y = this.oy + this.dy * this.proportion;
           this.z = this.oz + this.dz * this.proportion;
-          this.size = (this.os + this.ds * this.proportion) * opts.dataToConnectionSize;
+          this.size = Math.max(0, (this.os + this.ds * this.proportion) * opts.dataToConnectionSize); // Clamp size to 0
         } else {
           this.setConnection(this.nextConnection);
         }
@@ -366,12 +371,15 @@ const NeuralBackground: FC = () => {
           return;
         }
 
-        ctx.beginPath();
-        ctx.strokeStyle = this.screen.color;
-        ctx.lineWidth = this.size * this.screen.scale;
-        ctx.moveTo(this.screen.lastX ?? 0, this.screen.lastY ?? 0);
-        ctx.lineTo(this.screen.x, this.screen.y);
-        ctx.stroke();
+        const lineWidth = Math.max(0, this.size * this.screen.scale); // Clamp lineWidth to 0 to avoid negative
+        if (lineWidth > 0) { // Skip drawing if lineWidth is 0
+          ctx.beginPath();
+          ctx.strokeStyle = this.screen.color;
+          ctx.lineWidth = lineWidth;
+          ctx.moveTo(this.screen.lastX ?? 0, this.screen.lastY ?? 0);
+          ctx.lineTo(this.screen.x, this.screen.y);
+          ctx.stroke();
+        }
       }
 
       setConnection(connection: Connection): void {
@@ -418,6 +426,8 @@ const NeuralBackground: FC = () => {
         this.screen.z = z;
         z += opts.depth;
 
+        // Clamp z to positive value to avoid negative scale
+        z = Math.max(z, 0.1); // Minimum z to prevent division by zero or negative
         this.screen.scale = opts.focalLength / z;
         this.screen.x = opts.vanishPoint.x + x * this.screen.scale;
         this.screen.y = opts.vanishPoint.y + y * this.screen.scale;

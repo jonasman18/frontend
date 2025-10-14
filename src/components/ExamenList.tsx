@@ -4,6 +4,22 @@ import type { Examen } from "../models/Examen";
 import ExamenForm from "./ExamenForm";
 import TableList from "./TableList";
 
+// 🕒 Formater la durée (1.5 → 1H30)
+function formatDuree(num?: number): string {
+  if (num == null) return "";
+  const heures = Math.floor(num);
+  const minutes = Math.round((num - heures) * 60);
+  return minutes === 0 ? `${heures}H` : `${heures}H${minutes}`;
+}
+
+// 🕐 Formater l’heure (garde seulement HH:mm)
+function formatHeure(datetime?: string): string {
+  if (!datetime) return "";
+  const date = new Date(datetime);
+  if (isNaN(date.getTime())) return ""; // Sécurité si format incorrect
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 const ExamenList: React.FC = () => {
   const [examens, setExamens] = useState<Examen[]>([]);
   const [filteredExamens, setFilteredExamens] = useState<Examen[]>([]);
@@ -13,7 +29,6 @@ const ExamenList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 🔹 Charger les examens
   const loadExamens = () => {
     setLoading(true);
     ApiService.getExamens()
@@ -21,8 +36,7 @@ const ExamenList: React.FC = () => {
         setExamens(data);
         setFilteredExamens(data);
       })
-      .catch((err) => {
-        console.error("Erreur chargement examens:", err);
+      .catch(() => {
         setError("Impossible de charger les examens");
         setExamens([]);
       })
@@ -43,10 +57,7 @@ const ExamenList: React.FC = () => {
           e.niveau?.codeNiveau?.toLowerCase().includes(term) ||
           e.session?.toLowerCase().includes(term) ||
           e.numeroSalle?.toLowerCase().includes(term) ||
-          e.dateExamen?.toLowerCase().includes(term) ||
-          e.heureDebut?.toLowerCase().includes(term) ||
-          e.heureFin?.toLowerCase().includes(term) ||
-          String(e.idExamen).includes(term)
+          e.dateExamen?.toLowerCase().includes(term)
       )
     );
   }, [searchTerm, examens]);
@@ -69,10 +80,8 @@ const ExamenList: React.FC = () => {
       .catch(() => alert("Erreur lors de l’enregistrement"));
   };
 
-  if (loading)
-    return <p className="text-center text-gray-300">Chargement...</p>;
-  if (error)
-    return <p className="text-center text-red-400">{error}</p>;
+  if (loading) return <p className="text-center text-gray-300">Chargement...</p>;
+  if (error) return <p className="text-center text-red-400">{error}</p>;
 
   return (
     <div className="space-y-4">
@@ -95,9 +104,21 @@ const ExamenList: React.FC = () => {
           { key: "matiere.nomMatiere", label: "Matière" },
           { key: "niveau.codeNiveau", label: "Niveau" },
           { key: "dateExamen", label: "Date" },
-          { key: "heureDebut", label: "Heure Début" },
-          { key: "heureFin", label: "Heure Fin" },
-          { key: "duree", label: "Durée" },
+          {
+            key: "heureDebut",
+            label: "Heure Début",
+            render: (item) => formatHeure(item.heureDebut),
+          },
+          {
+            key: "heureFin",
+            label: "Heure Fin",
+            render: (item) => formatHeure(item.heureFin),
+          },
+          {
+            key: "duree",
+            label: "Durée",
+            render: (item) => formatDuree(item.duree),
+          },
           { key: "numeroSalle", label: "Salle" },
           { key: "session", label: "Session" },
         ]}

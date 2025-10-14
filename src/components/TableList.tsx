@@ -1,9 +1,10 @@
+// src/components/TableList.tsx
 import React from "react";
 
 interface Column<T> {
-  key: keyof T | string; // accepte chemins imbriqués
+  key: keyof T | string;
   label: string;
-  render?: (item: T) => React.ReactNode; // rendu personnalisé optionnel
+  render?: (item: T) => React.ReactNode; // rendu personnalisé
 }
 
 interface TableListProps<T> {
@@ -14,7 +15,7 @@ interface TableListProps<T> {
   onAdd: () => void;
   onEdit: (item: T) => void;
   onDelete: (id: number | string) => void;
-  showActions?: boolean; // nouvelle option (default: true)
+  showActions?: boolean;
 }
 
 function getValue(obj: any, path: string): any {
