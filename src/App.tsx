@@ -14,34 +14,40 @@ import RepartitionList from "./components/RepartitionList";
 import RepartirList from "./components/RepartirList";
 import RepartitionParSalleList from "./components/RepartitionParSalleList";
 import PlanningSurveillanceList from "./components/PlanningSurveillanceList";
+import DownloadPlanningButton from "./components/DownloadPlanningButton";
 
 function App() {
+  const menuItems = [
+    { to: "/examens", label: "Examens", color: "emerald" },
+    { to: "/examenparcours", label: "Examens ↔ Parcours", color: "teal" },
+    { to: "/matieres", label: "Matières", color: "purple" },
+    { to: "/enseignants", label: "Enseignants", color: "cyan" },
+    { to: "/enseigner", label: "Enseignements", color: "indigo" },
+    { to: "/parcours", label: "Parcours", color: "pink" },
+    { to: "/salles", label: "Salles", color: "orange" },
+    { to: "/surveillants", label: "Surveillants", color: "red" },
+    { to: "/repartitions", label: "Répartitions", color: "green" },
+    { to: "/repartir", label: "Répartir", color: "yellow" },
+    { to: "/repartition-salle", label: "Répartition par Salle", color: "lime" },
+    { to: "/planning-surveillance", label: "Planning Surveillance", color: "teal" },
+    { to: "/DownloadPlanningButton", label: "Télécharger Planning PDF", color: "gray" },
+  ];
+
   return (
     <Router>
-      <div className="h-screen relative text-white"> {/* Classe appliquée : motif diagonal croisé visible en base */}
+      <div className="h-screen relative text-white flex">
         <NeuralBackground /> {/* Animation neurale en arrière-plan */}
-        {/* Navbar */}
-        <nav className="relative z-10 flex flex-wrap justify-center gap-4 p-4 bg-emerald-800 shadow-lg backdrop-blur-sm bg-opacity-90">
-          {[
-            { to: "/examens", label: "Examens" },
-            { to: "/examenparcours", label: "Examens & Parcours" },
-            { to: "/matieres", label: "Matières" },
-            { to: "/enseignants", label: "Enseignants" },
-            { to: "/enseigner", label: "Enseignements" },
-            { to: "/parcours", label: "Parcours" },
-            { to: "/salles", label: "Salles" },
-            { to: "/surveillants", label: "Surveillants" },
-            { to: "/repartitions", label: "Répartitions" },
-            { to: "/repartir", label: "Répartir" },
-            { to: "/repartition-salle", label: "Répartition par Salle" },
-            { to: "/planning-surveillance", label: "Planning Surveillance" },
-          ].map((item) => (
+        {/* Navbar verticale à gauche */}
+        <nav className="relative z-10 w-64 bg-gradient-to-b from-emerald-900 via-emerald-800 to-emerald-900 shadow-2xl backdrop-blur-md bg-opacity-95 border-r border-emerald-600 flex flex-col gap-1 p-6 overflow-y-auto">
+          {menuItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `px-3 py-2 rounded-md font-semibold transition ${
-                  isActive ? "bg-emerald-400 text-black" : "hover:bg-emerald-600"
+                `px-4 py-3 rounded-xl font-bold text-sm transition-all duration-300 ease-in-out w-full text-left shadow-md ${
+                  isActive
+                    ? `bg-gradient-to-r from-${item.color}-400 to-${item.color}-500 text-black shadow-${item.color}-300/50 transform scale-105`
+                    : `hover:bg-${item.color}-700 hover:shadow-${item.color}-500/25 hover:translate-x-1`
                 }`
               }
             >
@@ -50,8 +56,8 @@ function App() {
           ))}
         </nav>
 
-        {/* Contenu pleine largeur, scrollable */}
-        <div className="relative z-10 w-full px-10 py-6 overflow-y-auto"> {/* overflow-y-auto pour scroll vertical si contenu long */}
+        {/* Contenu principal, scrollable */}
+        <main className="flex-1 relative z-10 px-10 py-6 overflow-y-auto">
           <Routes>
             <Route path="/" element={<ExamenList />} />
             <Route path="/examens" element={<ExamenList />} />
@@ -67,8 +73,9 @@ function App() {
             <Route path="/repartir" element={<RepartirList />} />
             <Route path="/repartition-salle" element={<RepartitionParSalleList />} />
             <Route path="/planning-surveillance" element={<PlanningSurveillanceList />} />
+            <Route path="/DownloadPlanningButton" element={<DownloadPlanningButton />} />
           </Routes>
-        </div>
+        </main>
       </div>
     </Router>
   );

@@ -310,8 +310,10 @@ static deleteExamenParcours(idExamen: number, idParcours: number): Promise<void>
 
 // ✅ Nouvelle version cohérente avec le backend
 static deleteAllExamenParcoursByExamen(idExamen: number) {
-  return axios.delete(`${API_BASE_URL}/examenparcours/examen/${idExamen}`);
+  return axios.delete(`${API_BASE_URL}/examenparcours/delete-all/${idExamen}`);
 }
+
+
 
 static updateExamenParcoursGlobal(idExamen: number, parcoursIds: number[]) {
   return axios

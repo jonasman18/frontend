@@ -8,6 +8,7 @@ const ExamenParcoursList: React.FC = () => {
   const [associations, setAssociations] = useState<ExamenParcours[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingExamenId, setEditingExamenId] = useState<number | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   // 🔄 Charger toutes les associations
   const loadAssociations = () => {
@@ -51,15 +52,27 @@ const ExamenParcoursList: React.FC = () => {
     if (confirm("Voulez-vous supprimer toutes les associations de cet examen ?")) {
       ApiService.deleteAllExamenParcoursByExamen(idExamen)
         .then(() => {
-          alert("Associations supprimées !");
+          setMessage("✅ Associations supprimées avec succès !");
+          setTimeout(() => setMessage(null), 2500);
           loadAssociations();
         })
-        .catch(() => alert("Erreur lors de la suppression"));
+        .catch((err) => {
+          console.error("Erreur lors de la suppression :", err);
+          setMessage("❌ Erreur lors de la suppression !");
+          setTimeout(() => setMessage(null), 2500);
+        });
     }
   };
 
   return (
-    <div>
+    <div className="relative">
+      {/* ✅ Message temporaire au centre */}
+      {message && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 bg-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg text-center z-50 animate-fadeIn">
+          {message}
+        </div>
+      )}
+
       <TableList
         title="Associations Examens ↔ Parcours"
         columns={[
