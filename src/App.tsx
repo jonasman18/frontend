@@ -38,7 +38,7 @@ function App() {
       <div className="h-screen relative text-white flex">
         <NeuralBackground /> {/* Animation neurale en arrière-plan */}
         {/* Navbar verticale à gauche */}
-        <nav className="relative z-10 w-64 bg-gradient-to-b from-emerald-900 via-emerald-800 to-emerald-900 shadow-2xl backdrop-blur-md bg-opacity-95 border-r border-emerald-600 flex flex-col gap-1 p-6 overflow-y-auto">
+        <nav className="relative z-10 w-64 bg-gradient-to-b from-green-500 via-emerald-800 to-emerald-900 shadow-2xl backdrop-blur-md bg-opacity-95 border-r border-emerald-600 flex flex-col gap-1 p-6 overflow-y-auto">
           {menuItems.map((item) => (
             <NavLink
               key={item.to}

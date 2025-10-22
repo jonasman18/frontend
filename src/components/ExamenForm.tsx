@@ -181,50 +181,83 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
   };
 
   const handleSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const debut = parseLocalDateTime(formData.heureDebut);
-  const fin = parseLocalDateTime(formData.heureFin);
+    const debut = parseLocalDateTime(formData.heureDebut);
+    const fin = parseLocalDateTime(formData.heureFin);
 
-  if (!debut || !fin || fin <= debut) {
-    setError("Heure de fin invalide.");
-    return;
-  }
+    if (!debut || !fin || fin <= debut) {
+      setError("Heure de fin invalide.");
+      return;
+    }
 
-  const matiereId =
-    formData.matiere?.idMatiere ??
-    (typeof formData.matiere === "number" ? formData.matiere : null);
-  const niveauId =
-    formData.niveau?.idNiveau ??
-    (typeof formData.niveau === "number" ? formData.niveau : null);
+    const matiereId =
+      formData.matiere?.idMatiere ??
+      (typeof formData.matiere === "number" ? formData.matiere : null);
+    const niveauId =
+      formData.niveau?.idNiveau ??
+      (typeof formData.niveau === "number" ? formData.niveau : null);
 
-  if (!matiereId || !niveauId) {
-    setError("Veuillez sélectionner une matière et un niveau valides.");
-    return;
-  }
+    if (!matiereId || !niveauId) {
+      setError("Veuillez sélectionner une matière et un niveau valides.");
+      return;
+    }
 
-  const toSave: Examen = {
-    ...formData,
-    matiere: {
-      idMatiere: Number(matiereId),
-      nomMatiere:
-        matieres.find((m) => m.idMatiere === Number(matiereId))?.nomMatiere || "",
-    },
-    niveau: {
-      idNiveau: Number(niveauId),
-      codeNiveau: niveaux.find((n) => n.idNiveau === Number(niveauId))?.codeNiveau || "",
-    },
-    numeroSalle: selectedSalles.join(","),
-    duree: Number((dureeHeure + dureeMinute / 60).toFixed(2)),
-    dateExamen: formData.dateExamen,
-    heureDebut: formData.heureDebut,
-    heureFin: formData.heureFin,
+    const toSave: Examen = {
+      ...formData,
+      matiere: {
+        idMatiere: Number(matiereId),
+        nomMatiere:
+          matieres.find((m) => m.idMatiere === Number(matiereId))?.nomMatiere || "",
+      },
+      niveau: {
+        idNiveau: Number(niveauId),
+        codeNiveau:
+          niveaux.find((n) => n.idNiveau === Number(niveauId))?.codeNiveau || "",
+      },
+      numeroSalle: selectedSalles.join(","),
+      duree: Number((dureeHeure + dureeMinute / 60).toFixed(2)),
+      dateExamen: formData.dateExamen,
+      heureDebut: formData.heureDebut,
+      heureFin: formData.heureFin,
+    };
+
+    console.log("📤 Données envoyées à l'API:", toSave);
+    onSave(toSave);
   };
 
-  console.log("📤 Données envoyées à l'API:", toSave);
-  onSave(toSave);
-};
+  // --- Dropdown refs / state for matière selector
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const [showDropdown, setShowDropdownState] = useState<boolean>(false);
 
+  const handleClickOutside = (e: MouseEvent) => {
+    if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      setShowDropdownState(false);
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // ✅ Correction ici — renommée en `updateShowDropdown`
+  function updateShowDropdown(
+    next: boolean | ((prev: boolean) => boolean)
+  ): void {
+    const nextVisible =
+      typeof next === "function" ? next(showDropdown) : next;
+    setShowDropdownState(nextVisible);
+
+    if (nextVisible) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }
 
   // --- UI
   return (
@@ -239,39 +272,72 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
           <div className="grid grid-cols-2 gap-4">
             {/* Matière avec recherche + sélection */}
             <div>
-              <label className="block text-sm font-medium text-emerald-100 mb-1">
-                Matière
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="relative w-1/4">
-                  <input
-                    type="text"
-                    value={searchMatiere}
-                    onChange={(e) => setSearchMatiere(e.target.value)}
-                    placeholder="🔍"
-                    className="w-full border border-emerald-600 bg-emerald-950 rounded-lg p-2 text-center"
-                  />
-                </div>
-                <select
-                  value={formData.matiere?.idMatiere ?? ""}
-                  onChange={(e) => {
-                    const selected = matieres.find(
-                      (m) => m.idMatiere === Number(e.target.value)
-                    );
-                    if (selected) {
-                      setFormData((p) => ({ ...p, matiere: selected }));
-                      setSearchMatiere("");
-                    }
+              <div className="relative" ref={dropdownRef}>
+                <label className="block text-sm font-medium text-emerald-100 mb-1">
+                  Matière
+                </label>
+
+                {/* Champ principal */}
+                <div
+                  className="border border-emerald-600 bg-emerald-950 rounded-lg p-2 cursor-pointer select-none"
+                  onClick={() => {
+                    updateShowDropdown((prev) => !prev);
+                    setTimeout(() => inputRef.current?.focus(), 50); // 🔥 focus auto
                   }}
-                  className="w-3/4 border border-emerald-600 bg-emerald-950 rounded-lg p-2"
                 >
-                  <option value="">-- Sélectionner --</option>
-                  {filteredMatieres.map((m) => (
-                    <option key={m.idMatiere} value={m.idMatiere}>
-                      {m.nomMatiere}
-                    </option>
-                  ))}
-                </select>
+                  {formData.matiere?.nomMatiere || "-- Sélectionner --"}
+                </div>
+
+                {/* Liste déroulante */}
+                {showDropdown && (
+                  <div className="absolute z-50 mt-1 w-full bg-emerald-950 border border-emerald-700 rounded-lg shadow-lg max-h-60 overflow-y-auto animate-fadeIn">
+                    {/* Barre de recherche en haut */}
+                    <div className="sticky top-0 bg-emerald-950 p-2 border-b border-emerald-700">
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={searchMatiere}
+                        onChange={(e) => {
+                          const query = e.target.value.toLowerCase();
+                          setSearchMatiere(e.target.value);
+                          setFilteredMatieres(
+                            matieres.filter((m) =>
+                              m.nomMatiere.toLowerCase().includes(query)
+                            )
+                          );
+                        }}
+                        placeholder="🔍 Rechercher une matière..."
+                        className="w-full bg-emerald-900 text-white rounded-md px-2 py-1 focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+
+                    {/* Liste filtrée */}
+                    {filteredMatieres.map((m) => (
+                      <div
+                        key={m.idMatiere}
+                        className={`px-3 py-2 cursor-pointer hover:bg-emerald-700 ${
+                          formData.matiere?.idMatiere === m.idMatiere
+                            ? "bg-emerald-600"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setFormData((prev) => ({ ...prev, matiere: m }));
+                          updateShowDropdown(false);
+                          setSearchMatiere("");
+                          setFilteredMatieres(matieres);
+                        }}
+                      >
+                        {m.nomMatiere}
+                      </div>
+                    ))}
+
+                    {filteredMatieres.length === 0 && (
+                      <div className="px-3 py-2 text-gray-400 text-sm">
+                        Aucune matière trouvée
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
