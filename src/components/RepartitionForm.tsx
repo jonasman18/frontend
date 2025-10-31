@@ -19,6 +19,7 @@ const RepartitionForm: React.FC<RepartitionFormProps> = ({
       groupe: "",
       etudiantDebut: "",
       etudiantFin: "",
+      salle: null,
     }
   );
 

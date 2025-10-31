@@ -7,7 +7,8 @@ export interface ExamenParcoursId {
 }
 
 export interface ExamenParcours {
-  id: ExamenParcoursId;
+  idExamenParcours?: ExamenParcoursId | undefined;  
+ 
   examen?: Examen;
   parcours?: Parcours;
 }

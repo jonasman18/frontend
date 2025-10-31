@@ -1,5 +1,6 @@
 // src/components/TableList.tsx
 import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Column<T> {
   key: keyof T | string;
@@ -16,11 +17,34 @@ interface TableListProps<T> {
   onEdit: (item: T) => void;
   onDelete: (id: number | string) => void;
   showActions?: boolean;
+  animateRows?: boolean; // Nouveau prop pour activer l'animation successive
 }
 
 function getValue(obj: any, path: string): any {
   return path.split(".").reduce((o, p) => o?.[p], obj);
 }
+
+const rowVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.1,
+      duration: 0.3,
+    },
+  }),
+};
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
 
 const TableList = <T extends Record<string, any>>({
   title,
@@ -31,6 +55,7 @@ const TableList = <T extends Record<string, any>>({
   onEdit,
   onDelete,
   showActions = true,
+  animateRows = false,
 }: TableListProps<T>) => {
   return (
     <div className="p-6 bg-emerald-950 text-white rounded-lg shadow-lg">
@@ -61,40 +86,52 @@ const TableList = <T extends Record<string, any>>({
               )}
             </tr>
           </thead>
-          <tbody>
-            {data.map((item) => (
-              <tr
-                key={String(item[idKey])}
-                className="hover:bg-emerald-900 transition"
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key.toString()}
-                    className="px-4 py-2 border-b border-emerald-700 break-words truncate max-w-[200px]"
-                  >
-                    {col.render ? col.render(item) : (getValue(item, col.key.toString()) ?? "")}
-                  </td>
-                ))}
+          <AnimatePresence>
+            <motion.tbody
+              className="space-y-1"
+              variants={animateRows ? containerVariants : undefined}
+              initial={animateRows ? "hidden" : undefined}
+              animate={animateRows ? "visible" : undefined}
+            >
+              {data.map((item, index) => (
+                <motion.tr
+                  key={String(item[idKey])}
+                  className="hover:bg-emerald-900 transition"
+                  variants={animateRows ? rowVariants : undefined}
+                  initial={animateRows ? "hidden" : undefined}
+                  animate={animateRows ? "visible" : undefined}
+                  custom={index}
+                  exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+                >
+                  {columns.map((col) => (
+                    <td
+                      key={col.key.toString()}
+                      className="px-4 py-2 border-b border-emerald-700 break-words truncate max-w-[200px]"
+                    >
+                      {col.render ? col.render(item) : (getValue(item, col.key.toString()) ?? "")}
+                    </td>
+                  ))}
 
-                {showActions && (
-                  <td className="px-4 py-2 border-b border-emerald-700 flex gap-2">
-                    <button
-                      onClick={() => onEdit(item)}
-                      className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md text-sm"
-                    >
-                      ✏ Modifier
-                    </button>
-                    <button
-                      onClick={() => onDelete(item[idKey] as any)}
-                      className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-md text-sm"
-                    >
-                      🗑 Supprimer
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
+                  {showActions && (
+                    <td className="px-4 py-2 border-b border-emerald-700 flex gap-2">
+                      <button
+                        onClick={() => onEdit(item)}
+                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md text-sm"
+                      >
+                        ✏ Modifier
+                      </button>
+                      <button
+                        onClick={() => onDelete(item[idKey] as any)}
+                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-md text-sm"
+                      >
+                        🗑 Supprimer
+                      </button>
+                    </td>
+                  )}
+                </motion.tr>
+              ))}
+            </motion.tbody>
+          </AnimatePresence>
         </table>
       </div>
     </div>

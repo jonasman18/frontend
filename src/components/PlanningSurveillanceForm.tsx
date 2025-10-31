@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
 import type { Salle } from "../models/Salle";
@@ -18,6 +18,10 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
   onClose,
 }) => {
   const [examens, setExamens] = useState<Examen[]>([]);
+  const [filteredExamens, setFilteredExamens] = useState<Examen[]>([]);
+  const [searchExamen, setSearchExamen] = useState("");
+  const [showExamenDropdown, setShowExamenDropdown] = useState(false);
+
   const [salles, setSalles] = useState<Salle[]>([]);
   const [surveillants, setSurveillants] = useState<Surveillant[]>([]);
   const [sallesDetectees, setSallesDetectees] = useState<Salle[]>([]);
@@ -36,6 +40,8 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
     }
   );
 
+  const examenRef = useRef<HTMLDivElement>(null);
+
   // Charger les données initiales
   useEffect(() => {
     Promise.all([
@@ -44,9 +50,54 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
       ApiService.getSurveillants(),
     ]).then(([e, s, sv]) => {
       setExamens(e);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      setFilteredExamens(
+        e.filter((ex) => {
+          if (!ex.dateExamen) return false;
+          const examDate = new Date(ex.dateExamen);
+          examDate.setHours(0, 0, 0, 0);
+          return examDate >= today;
+        })
+      );
       setSalles(s);
       setSurveillants(sv);
     });
+  }, []);
+
+  // Filtrage dynamique pour examens
+  useEffect(() => {
+    const q = searchExamen.toLowerCase();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setFilteredExamens(
+      examens.filter(
+        (e) => {
+          if (!e.dateExamen) return false;
+          const examDate = new Date(e.dateExamen);
+          examDate.setHours(0, 0, 0, 0);
+          return examDate >= today &&
+            (e.matiere?.nomMatiere?.toLowerCase().includes(q) ||
+            e.dateExamen?.toLowerCase().includes(q) ||
+            e.session?.toLowerCase().includes(q) ||
+            e.numeroSalle?.toLowerCase().includes(q));
+        }
+      )
+    );
+  }, [searchExamen, examens]);
+
+  // Fermer le dropdown si clic à l’extérieur
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        examenRef.current &&
+        !examenRef.current.contains(e.target as Node)
+      ) {
+        setShowExamenDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // 🔹 Détection automatique selon l’examen
@@ -160,28 +211,55 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
       onClose={onClose}
       onSubmit={handleSubmit}
     >
-      {/* Examen */}
-      <div>
-        <label className="block text-sm font-medium">Examen</label>
-        <select
-          value={formData.examen?.idExamen || ""}
-          onChange={(e) => {
-            const ex = examens.find(
-              (x) => x.idExamen === Number(e.target.value)
-            );
-            handleSelectChange("examen", ex);
-          }}
-          className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1"
+      {/* Examen - Sélecteur avec recherche */}
+      <div ref={examenRef} className="relative mb-4">
+        <label className="block text-sm font-medium mb-1 text-emerald-100">
+          Examen
+        </label>
+        <div
+          className="border border-emerald-600 bg-emerald-950 text-white rounded-lg p-2 cursor-pointer"
+          onClick={() => setShowExamenDropdown((p) => !p)}
         >
-          <option value="">-- Sélectionner --</option>
-          {examens.map((ex) => (
-            <option key={ex.idExamen} value={ex.idExamen}>
-              {ex.matiere?.nomMatiere} — {ex.dateExamen}
-            </option>
-          ))}
-        </select>
-      </div>
+          {formData.examen
+            ? `${formData.examen.matiere?.nomMatiere || "N/A"} — ${formData.examen.dateExamen || "N/A"}`
+            : "-- Sélectionner --"}
+        </div>
 
+        {showExamenDropdown && (
+          <div className="absolute mt-1 w-full bg-emerald-950 border border-emerald-700 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50">
+            <div className="sticky top-0 bg-emerald-950 p-2 border-b border-emerald-700">
+              <input
+                type="text"
+                value={searchExamen}
+                onChange={(e) => setSearchExamen(e.target.value)}
+                placeholder="🔍 Rechercher un examen (matière, date...)"
+                className="w-full bg-emerald-900 text-white rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500"
+                autoFocus
+              />
+            </div>
+            {filteredExamens.map((ex) => (
+              <div
+                key={ex.idExamen}
+                className={`px-3 py-2 cursor-pointer hover:bg-emerald-700 ${
+                  formData.examen?.idExamen === ex.idExamen ? "bg-emerald-600" : ""
+                }`}
+                onClick={() => {
+                  handleSelectChange("examen", ex);
+                  setShowExamenDropdown(false);
+                  setSearchExamen("");
+                }}
+              >
+                {ex.matiere?.nomMatiere} — {ex.dateExamen} ({ex.session})
+              </div>
+            ))}
+            {filteredExamens.length === 0 && (
+              <div className="px-3 py-2 text-gray-400 text-sm">
+                Aucun examen trouvé
+              </div>
+            )}
+          </div>
+        )}
+</div>
       {/* Heures */}
       <div className="flex gap-3 mt-3">
         <div className="flex-1">

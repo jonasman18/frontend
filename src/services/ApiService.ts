@@ -11,10 +11,82 @@ import type { Surveiller } from "../models/Surveiller";
 import type { ExamenParcours } from "../models/ExamenParcours";
 import type { Repartition } from "../models/Repartition";
 import type { Repartir } from "../models/Repartir";
+import type { PlanningSurveillance } from "../models/PlanningSurveillance";
 
 const API_BASE_URL = "http://localhost:8080/api";
 
+// ✅ apiClient pour TanStack Query (fetch-based pour meilleur caching/invalidation, best practice 2025)
+export const apiClient = {
+  // Examens paginés avec search/sort server-side
+  getExamens: async (params: {
+    page: number;
+    size: number;
+    search?: string;
+    sortDir?: "ASC" | "DESC";
+  }): Promise<{
+    content: Examen[];
+    totalElements: number;
+    number: number;
+    totalPages: number;
+  }> => {
+    const url = new URL(`${API_BASE_URL}/examens`);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, String(value));
+      }
+    });
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
+    return response.json();
+  },
+
+  // Check conflit ultra-rapide
+  checkConflict: async (data: {
+    date: string;
+    salles: string[];
+    debut: string;
+    fin: string;
+    idExamen?: number;
+  }): Promise<boolean> => {
+    const response = await fetch(`${API_BASE_URL}/examens/check-conflict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(`Erreur check: ${response.status}`);
+    const result = await response.json();
+    return result.hasConflict;
+  },
+
+  // Save examen (unifié)
+  saveExamen: async (examen: Examen): Promise<Examen> => {
+    const url = examen.idExamen
+      ? `${API_BASE_URL}/examens/${examen.idExamen}`
+      : `${API_BASE_URL}/examens`;
+    const method = examen.idExamen ? "PUT" : "POST";
+    const response = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(examen),
+    });
+    if (!response.ok) throw new Error(`Erreur save: ${response.status}`);
+    return response.json();
+  },
+
+  // Delete examen
+  deleteExamen: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/examens/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error(`Erreur delete: ${response.status}`);
+  },
+
+  // Autres méthodes (axios pour simplicité, ou migrez vers fetch si besoin)
+};
+
 export class ApiService {
+  static apiClient: any;
+  static API_URL: any;
   // ----------------- EXAMENS -----------------
   static getExamens(): Promise<Examen[]> {
     return axios.get(`${API_BASE_URL}/examens`).then((res) => res.data);
@@ -24,7 +96,7 @@ export class ApiService {
     return axios.get(`${API_BASE_URL}/examens/${id}`).then((res) => res.data);
   }
 
-  static saveExamen(examen: Examen): Promise<Examen> {
+  static createExamen(examen: Examen): Promise<Examen> {
     const cleanedExamen = {
       ...examen,
       // On ne garde que les IDs côté backend
@@ -52,15 +124,50 @@ export class ApiService {
       // Session (string)
       session: examen.session ?? "",
     };
+    return axios
+      .post(`${API_BASE_URL}/examens`, cleanedExamen)
+      .then((res) => res.data);
+  }
 
+  static updateExamen(id: number, examen: Examen): Promise<Examen> {
+    const cleanedExamen = {
+      ...examen,
+      idExamen: id,
+      // On ne garde que les IDs côté backend
+      matiere: examen.matiere?.idMatiere
+        ? { idMatiere: examen.matiere.idMatiere }
+        : null,
+      niveau: examen.niveau?.idNiveau
+        ? { idNiveau: examen.niveau.idNiveau }
+        : null,
+
+      // Conversion de duree (float → BigDecimal compatible)
+      duree:
+        examen.duree && !isNaN(Number(examen.duree))
+          ? Number(examen.duree)
+          : 0,
+
+      // Heure et date bien envoyées au format attendu
+      heureDebut: examen.heureDebut ?? null,
+      heureFin: examen.heureFin ?? null,
+      dateExamen: examen.dateExamen ?? null,
+
+      // Salle(s)
+      numeroSalle: examen.numeroSalle ?? "",
+
+      // Session (string)
+      session: examen.session ?? "",
+    };
+    return axios
+      .put(`${API_BASE_URL}/examens/${id}`, cleanedExamen)
+      .then((res) => res.data);
+  }
+
+  static saveExamen(examen: Examen): Promise<Examen> {
     if (examen.idExamen) {
-      return axios
-        .put(`${API_BASE_URL}/examens/${examen.idExamen}`, cleanedExamen)
-        .then((res) => res.data);
+      return this.updateExamen(examen.idExamen, examen);
     } else {
-      return axios
-        .post(`${API_BASE_URL}/examens`, cleanedExamen)
-        .then((res) => res.data);
+      return this.createExamen(examen);
     }
   }
 
@@ -137,6 +244,18 @@ export class ApiService {
     return axios.delete(`${API_BASE_URL}/enseignants/${id}`).then(() => {});
   }
 
+  static getEnseignantsByMatiere(idMatiere: number): Promise<Enseignant[]> {
+    return axios.get(`${API_BASE_URL}/enseignants/matiere/${idMatiere}`).then((res) => res.data);
+  }
+
+  static getEnseignantsByExamen(idExamen: number): Promise<Enseignant[]> {
+    return axios.get(`${API_BASE_URL}/examens/${idExamen}/enseignants`).then((res) => res.data.map((ee: any) => ee.enseignant));
+  }
+
+  static saveExamenEnseignants(idExamen: number, enseignantsIds: number[]): Promise<void> {
+    return axios.post(`${API_BASE_URL}/examenEnseignant/save`, { idExamen, enseignants: enseignantsIds }).then(() => {});
+  }
+
   // ----------------- SURVEILLANTS -----------------
   static getSurveillants(): Promise<Surveillant[]> {
     return axios.get(`${API_BASE_URL}/surveillants`).then((res) => res.data);
@@ -146,20 +265,19 @@ export class ApiService {
     return axios.get(`${API_BASE_URL}/surveillants/${id}`).then((res) => res.data);
   }
 
-static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
-  if (surveillant.idSurveillant && surveillant.idSurveillant > 0) {
-    // Modification
-    return axios
-      .put(`${API_BASE_URL}/surveillants/${surveillant.idSurveillant}`, surveillant)
-      .then((res) => res.data);
-  } else {
-    // Ajout
-    return axios
-      .post(`${API_BASE_URL}/surveillants`, surveillant)
-      .then((res) => res.data);
+  static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
+    if (surveillant.idSurveillant && surveillant.idSurveillant > 0) {
+      // Modification
+      return axios
+        .put(`${API_BASE_URL}/surveillants/${surveillant.idSurveillant}`, surveillant)
+        .then((res) => res.data);
+    } else {
+      // Ajout
+      return axios
+        .post(`${API_BASE_URL}/surveillants`, surveillant)
+        .then((res) => res.data);
+    }
   }
-}
-
 
   static deleteSurveillant(id: number): Promise<void> {
     return axios.delete(`${API_BASE_URL}/surveillants/${id}`).then(() => {});
@@ -260,19 +378,18 @@ static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
   }
 
   static updateSurveiller(
-  oldIdExamen: number,
-  oldIdSurveillant: number,
-  newIdExamen: number,
-  newIdSurveillant: number
-) {
-  return axios
-    .put(`${API_BASE_URL}/surveiller/${oldIdExamen}/${oldIdSurveillant}`, {
-      examen: { idExamen: newIdExamen },
-      surveillant: { idSurveillant: newIdSurveillant },
-    })
-    .then((res) => res.data);
-}
-
+    oldIdExamen: number,
+    oldIdSurveillant: number,
+    newIdExamen: number,
+    newIdSurveillant: number
+  ) {
+    return axios
+      .put(`${API_BASE_URL}/surveiller/${oldIdExamen}/${oldIdSurveillant}`, {
+        examen: { idExamen: newIdExamen },
+        surveillant: { idSurveillant: newIdSurveillant },
+      })
+      .then((res) => res.data);
+  }
 
   static deleteSurveiller(idExamen: number, idSurveillant: number): Promise<void> {
     return axios
@@ -281,205 +398,207 @@ static saveSurveillant(surveillant: Surveillant): Promise<Surveillant> {
   }
 
   // ----------------- EXAMENPARCOURS -----------------
- 
-static getExamenParcours(): Promise<ExamenParcours[]> {
-  return axios.get(`${API_BASE_URL}/examenparcours`).then((res) => res.data);
-}
 
-static async saveExamenParcours(
-  data: any,
-  oldId?: { idExamen: number; idParcours: number }
-) {
-  if (oldId) {
-    const res = await axios.put(
-      `${API_BASE_URL}/examenparcours/${oldId.idExamen}/${oldId.idParcours}`,
-      data
-    );
-    return res.data;
-  } else {
-    const res = await axios.post(`${API_BASE_URL}/examenparcours`, data);
+  static getExamenParcours(): Promise<ExamenParcours[]> {
+    return axios.get(`${API_BASE_URL}/examenparcours`).then((res) => res.data);
+  }
+
+  static async saveExamenParcours(
+    data: any,
+    oldId?: { idExamen: number; idParcours: number }
+  ) {
+    if (oldId) {
+      const res = await axios.put(
+        `${API_BASE_URL}/examenparcours/${oldId.idExamen}/${oldId.idParcours}`,
+        data
+      );
+      return res.data;
+    } else {
+      const res = await axios.post(`${API_BASE_URL}/examenparcours`, data);
+      return res.data;
+    }
+  }
+
+  static deleteExamenParcours(idExamen: number, idParcours: number): Promise<void> {
+    return axios
+      .delete(`${API_BASE_URL}/examenparcours/${idExamen}/${idParcours}`)
+      .then(() => {});
+  }
+
+  // ✅ Nouvelle version cohérente avec le backend
+  static deleteAllExamenParcoursByExamen(idExamen: number) {
+    return axios.delete(`${API_BASE_URL}/examenparcours/delete-all/${idExamen}`);
+  }
+
+  static updateExamenParcoursGlobal(idExamen: number, parcoursIds: number[]) {
+    return axios
+      .post(`${API_BASE_URL}/examenparcours/update-global`, { idExamen, parcoursIds })
+      .then((res) => res.data);
+  }
+
+  // ----------------- REPARTITIONS -----------------
+  static getRepartitions(): Promise<Repartition[]> {
+    return axios.get(`${API_BASE_URL}/repartitions`).then(res => res.data);
+  }
+
+  static saveRepartition(rep: Repartition): Promise<Repartition> {
+    if (rep.idRepartition) {
+      return axios.put(`${API_BASE_URL}/repartitions/${rep.idRepartition}`, rep).then(res => res.data);
+    } else {
+      return axios.post(`${API_BASE_URL}/repartitions`, rep).then(res => res.data);
+    }
+  }
+
+  static deleteRepartition(id: number): Promise<void> {
+    return axios.delete(`${API_BASE_URL}/repartitions/${id}`).then(() => {});
+  }
+
+  // --- REPARTIR ---
+  static getRepartir(): Promise<Repartir[]> {
+    return axios.get(`${API_BASE_URL}/repartir`).then((res) => res.data);
+  }
+
+  static saveRepartir(rep: Repartir): Promise<Repartir> {
+    return axios.post(`${API_BASE_URL}/repartir`, rep).then((res) => res.data);
+  }
+
+  static updateRepartir(
+    oldNumeroSalle: string,
+    oldIdRepartition: number,
+    newNumeroSalle: string,
+    newIdRepartition: number
+  ) {
+    return axios.put(`${API_BASE_URL}/repartir/${oldNumeroSalle}/${oldIdRepartition}`, {
+      salle: { numeroSalle: newNumeroSalle },
+      repartition: { idRepartition: newIdRepartition },
+    }).then(res => res.data);
+  }
+
+  static deleteRepartir(numeroSalle: string, idRepartition: number): Promise<void> {
+    return axios.delete(`${API_BASE_URL}/repartir/${numeroSalle}/${idRepartition}`);
+  }
+
+  // --- REPARTIR (par salle) ---
+  static async getRepartitionParSalle() {
+    const res = await axios.get(`${API_BASE_URL}/repartir/par-salle`);
+    return res.data; // Map<String, List<Repartir>>
+  }
+
+  // --- SURVEILLANCE AUTO ---
+  static async generateAutoSurveillance() {
+    const res = await axios.post(`${API_BASE_URL}/surveiller/generate-auto`);
     return res.data;
   }
-}
 
-static deleteExamenParcours(idExamen: number, idParcours: number): Promise<void> {
-  return axios
-    .delete(`${API_BASE_URL}/examenparcours/${idExamen}/${idParcours}`)
-    .then(() => {});
-}
-
-// ✅ Nouvelle version cohérente avec le backend
-static deleteAllExamenParcoursByExamen(idExamen: number) {
-  return axios.delete(`${API_BASE_URL}/examenparcours/delete-all/${idExamen}`);
-}
-
-
-
-static updateExamenParcoursGlobal(idExamen: number, parcoursIds: number[]) {
-  return axios
-    .post(`${API_BASE_URL}/examenparcours/update-global`, { idExamen, parcoursIds })
-    .then((res) => res.data);
-}
-
-
-// ----------------- REPARTITIONS -----------------
-static getRepartitions(): Promise<Repartition[]> {
-  return axios.get(`${API_BASE_URL}/repartitions`).then(res => res.data);
-}
-
-static saveRepartition(rep: Repartition): Promise<Repartition> {
-  if (rep.idRepartition) {
-    return axios.put(`${API_BASE_URL}/repartitions/${rep.idRepartition}`, rep).then(res => res.data);
-  } else {
-    return axios.post(`${API_BASE_URL}/repartitions`, rep).then(res => res.data);
+  static async getRepartitionByExamen(idExamen: number) {
+    const res = await axios.get(`${API_BASE_URL}/examens/${idExamen}/repartitions`);
+    return res.data;
   }
-}
 
-static deleteRepartition(id: number): Promise<void> {
-  return axios.delete(`${API_BASE_URL}/repartitions/${id}`).then(() => {});
-}
+  // Dans ApiService.ts
+  static getPlanningSurveillance() {
+    return axios.get(`${API_BASE_URL}/planning-surveillance`).then(res => res.data);
+  }
 
-// --- REPARTIR ---
-static getRepartir(): Promise<Repartir[]> {
-  return axios.get(`${API_BASE_URL}/repartir`).then((res) => res.data);
-}
+  // --- PLANNING DE SURVEILLANCE ---
+  static getPlanningByExamen(idExamen: number) {
+    return axios
+      .get(`${API_BASE_URL}/planning-surveillance/examen/${idExamen}`)
+      .then((res) => res.data);
+  }
 
-static saveRepartir(rep: Repartir): Promise<Repartir> {
-  return axios.post(`${API_BASE_URL}/repartir`, rep).then((res) => res.data);
-}
+  static generatePlanning(idExamen: number) {
+    return axios
+      .post(`${API_BASE_URL}/planning-surveillance/generate/${idExamen}`)
+      .then((res) => res.data);
+  }
 
+  // ✅ Récupérer un seul par ID
+  static getPlanningById(id: number) {
+    return axios.get(`${API_BASE_URL}/planning-surveillance/id/${id}`).then(res => res.data);
+  }
 
-static updateRepartir(
-  oldNumeroSalle: string,
-  oldIdRepartition: number,
-  newNumeroSalle: string,
-  newIdRepartition: number
-) {
-  return axios.put(`${API_BASE_URL}/repartir/${oldNumeroSalle}/${oldIdRepartition}`, {
-    salle: { numeroSalle: newNumeroSalle },
-    repartition: { idRepartition: newIdRepartition },
-  }).then(res => res.data);
-}
+  // ✅ Supprimer
+  static deletePlanningSurveillance(id: number) {
+    return axios.delete(`${API_BASE_URL}/planning-surveillance/${id}`);
+  }
 
+  // --- Dans ApiService.ts ---
 
-static deleteRepartir(numeroSalle: string, idRepartition: number): Promise<void> {
-  return axios.delete(`${API_BASE_URL}/repartir/${numeroSalle}/${idRepartition}`);
-}
+  static getParcoursByExamen(idExamen: number) {
+    return axios
+      .get(`${API_BASE_URL}/examenparcours/examen/${idExamen}`)  // ✅ Corrigé : /examen/ au lieu de /idExamen/
+      .then((res) => res.data);
+  }
+  static getSurveillantsBySalle(numeroSalle: string) {
+    return axios
+      .get(`${API_BASE_URL}/surveillants/by-salle/${numeroSalle}`)
+      .then((res) => res.data);
+  }
 
-// --- REPARTIR (par salle) ---
-static async getRepartitionParSalle() {
-  const res = await axios.get(`${API_BASE_URL}/repartir/par-salle`);
-  return res.data; // Map<String, List<Repartir>>
-}
+  static updateExamenSalleGlobal(idExamen: number, salles: string[]) {
+    return axios.post("/examensalle/update-global", { idExamen, salles });
+  }
 
-// --- SURVEILLANCE AUTO ---
-static async generateAutoSurveillance() {
-  const res = await fetch(`${API_BASE_URL}/surveiller/generate-auto`, {
-    method: "POST",
-  });
-  return res.json();
-}
+  static getExamenSalle() {
+    return axios.get("/examensalle");
+  }
 
-static async getRepartitionByExamen(idExamen: number) {
-  const res = await fetch(`${API_BASE_URL}/examens/${idExamen}/repartitions`);
-  return res.json();
-}
+  // --- PLANNING DE SURVEILLANCE ---
+  static async savePlanningSurveillance(planning: any) {
+    // ✅ Si on a plusieurs salles détectées ou plusieurs surveillants à répartir
+    if (planning.sallesDetectees && planning.surveillantsDetectes) {
+      const promises: Promise<any>[] = [];
 
+      for (const [numSalle, listeSurv] of Object.entries(
+        planning.surveillantsDetectes
+      )) {
+        for (const sv of listeSurv as any[]) {
+          const item = {
+            examen: { idExamen: planning.examen.idExamen },
+            salle: { numeroSalle: numSalle },
+            surveillant: { idSurveillant: sv.idSurveillant },
+            dateExamen: planning.dateExamen,
+            heureDebut: planning.heureDebut,
+            heureFin: planning.heureFin,
+          };
 
-// Dans ApiService.ts
-static getPlanningSurveillance() {
-  return axios.get(`${API_BASE_URL}/planning-surveillance`).then(res => res.data);
-}
-
-
-// --- PLANNING DE SURVEILLANCE ---
-static getPlanningByExamen(idExamen: number) {
-  return axios
-    .get(`${API_BASE_URL}/planning-surveillance/examen/${idExamen}`)
-    .then((res) => res.data);
-}
-
-static generatePlanning(idExamen: number) {
-  return axios
-    .post(`${API_BASE_URL}/planning-surveillance/generate/${idExamen}`)
-    .then((res) => res.data);
-}
-
-
-// ✅ Récupérer un seul par ID
-static getPlanningById(id: number) {
-  return axios.get(`${API_BASE_URL}/planning-surveillance/id/${id}`).then(res => res.data);
-}
-
-
-
-// ✅ Supprimer
-static deletePlanningSurveillance(id: number) {
-  return axios.delete(`${API_BASE_URL}/planning-surveillance/${id}`);
-}
-
-// --- Dans ApiService.ts ---
-static getParcoursByExamen(idExamen: number) {
-  return axios
-    .get(`${API_BASE_URL}/examenparcours/idExamen/${idExamen}`)
-    .then((res) => res.data);
-}
-
-static getSurveillantsBySalle(numeroSalle: string) {
-  return axios
-    .get(`${API_BASE_URL}/surveillants/by-salle/${numeroSalle}`)
-    .then((res) => res.data);
-}
-
-static updateExamenSalleGlobal(idExamen: number, salles: string[]) {
-  return axios.post("/examensalle/update-global", { idExamen, salles });
-}
-
-static getExamenSalle() {
-  return axios.get("/examensalle");
-}
-
-// --- PLANNING DE SURVEILLANCE ---
-static async savePlanningSurveillance(planning: any) {
-  // ✅ Si on a plusieurs salles détectées ou plusieurs surveillants à répartir
-  if (planning.sallesDetectees && planning.surveillantsDetectes) {
-    const promises: Promise<any>[] = [];
-
-    for (const [numSalle, listeSurv] of Object.entries(
-      planning.surveillantsDetectes
-    )) {
-      for (const sv of listeSurv as any[]) {
-        const item = {
-          examen: { idExamen: planning.examen.idExamen },
-          salle: { numeroSalle: numSalle },
-          surveillant: { idSurveillant: sv.idSurveillant },
-          dateExamen: planning.dateExamen,
-          heureDebut: planning.heureDebut,
-          heureFin: planning.heureFin,
-        };
-
-        // Chaque ligne correspond à une combinaison (examen + salle + surveillant)
-        promises.push(
-          axios.post(`${API_BASE_URL}/planning-surveillance`, item)
-        );
+          // Chaque ligne correspond à une combinaison (examen + salle + surveillant)
+          promises.push(
+            axios.post(`${API_BASE_URL}/planning-surveillance`, item)
+          );
+        }
       }
+
+      return Promise.all(promises).then((res) => res.map((r) => r.data));
     }
 
-    return Promise.all(promises).then((res) => res.map((r) => r.data));
+    // ✅ Sinon, simple enregistrement unique
+    if (planning.idPlanning) {
+      return axios
+        .put(`${API_BASE_URL}/planning-surveillance/${planning.idPlanning}`, planning)
+        .then((res) => res.data);
+    } else {
+      return axios
+        .post(`${API_BASE_URL}/planning-surveillance`, planning)
+        .then((res) => res.data);
+    }
   }
-
-  // ✅ Sinon, simple enregistrement unique
-  if (planning.idPlanning) {
-    return axios
-      .put(`${API_BASE_URL}/planning-surveillance/${planning.idPlanning}`, planning)
-      .then((res) => res.data);
-  } else {
-    return axios
-      .post(`${API_BASE_URL}/planning-surveillance`, planning)
-      .then((res) => res.data);
-  }
+// ✅ Récupérer uniquement les examens à venir (présents + futurs)
+static getUpcomingExamens(): Promise<Examen[]> {
+  return axios
+    .get(`${API_BASE_URL}/examens/upcoming`)
+    .then((res) => res.data);
 }
 
-
+static getPlanningSurveillancePaged(page: number, size: number): Promise<{
+  content: PlanningSurveillance[];
+  totalElements: number;
+  totalPages: number;
+}> {
+  const params = new URLSearchParams({ page: page.toString(), size: size.toString() });
+  return axios.get(`${API_BASE_URL}/planning-surveillance?page=${params.get('page')}&size=${params.get('size')}`)
+    .then(res => res.data);
+}
 
 }

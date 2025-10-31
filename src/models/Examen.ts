@@ -16,4 +16,7 @@ export interface Examen {
   duree?: number;
   numeroSalle?: string;
   session?: string;
+  enseignants?: number[];  
+  parcours?: number[];
 }
+

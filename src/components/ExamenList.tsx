@@ -22,41 +22,60 @@ function formatDateFR(dateStr?: string): string {
     .padStart(2, "0")}/${d.getFullYear()}`;
 }
 
+// 💠 SkeletonRow pour effet de chargement fluide
+const SkeletonRow = () => (
+  <div className="animate-pulse flex justify-between border-b border-emerald-800 py-2">
+    {[...Array(7)].map((_, i) => (
+      <div key={i} className="h-4 bg-emerald-800/40 rounded w-[12%]" />
+    ))}
+  </div>
+);
+
 const ExamenList: React.FC = () => {
   const [examens, setExamens] = useState<Examen[]>([]);
   const [filteredExamens, setFilteredExamens] = useState<Examen[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Examen | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // ✅ États pour ExamenParcours
   const [showExamenParcours, setShowExamenParcours] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState<number | undefined>();
   const [showExamenParcoursList, setShowExamenParcoursList] = useState(false);
 
-  // Charger examens
-  const loadExamens = () => {
-    setLoading(true);
-    ApiService.getExamens()
-      .then((data) => {
-        setExamens(data);
-        setFilteredExamens(data);
-      })
-      .catch(() => {
-        setError("Impossible de charger les examens");
-        setExamens([]);
-      })
-      .finally(() => setLoading(false));
+  // ⚡ Charger examens (avec cache local instantané)
+  const loadExamens = async () => {
+    try {
+      setIsLoading(true);
+      // 1️⃣ Charger depuis le cache local (affichage instantané)
+      const cached = localStorage.getItem("examens_cache");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setExamens(parsed);
+        setFilteredExamens(parsed);
+      }
+
+      // 2️⃣ Charger depuis le backend en parallèle
+      const data = await ApiService.getUpcomingExamens();
+      setExamens(data);
+      setFilteredExamens(data);
+      localStorage.setItem("examens_cache", JSON.stringify(data));
+    } catch (err) {
+      console.error(err);
+      setError("Impossible de charger les examens");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadExamens();
   }, []);
 
-  // Recherche dynamique
+  // 🔍 Recherche dynamique
   useEffect(() => {
     const term = searchTerm.toLowerCase();
     setFilteredExamens(
@@ -71,14 +90,14 @@ const ExamenList: React.FC = () => {
     );
   }, [searchTerm, examens]);
 
-  // Tri par date
+  // 📅 Tri par date
   const sortedExamens = [...filteredExamens].sort((a, b) => {
     const da = new Date(a.dateExamen ?? "").getTime();
     const db = new Date(b.dateExamen ?? "").getTime();
     return sortAsc ? db - da : da - db;
   });
 
-  // Suppression
+  // 🗑️ Suppression
   const handleDelete = (id: number | string) => {
     if (confirm("Supprimer cet examen ?")) {
       ApiService.deleteExamen(Number(id))
@@ -87,8 +106,8 @@ const ExamenList: React.FC = () => {
     }
   };
 
-  // Sauvegarde (ajout / modification)
-  const handleSave = async (examen: Examen) => {
+  // 💾 Sauvegarde (ajout / modification)
+  const handleSave = async (examen: Examen): Promise<Examen> => {
     try {
       const isEdit = !!examen.idExamen;
       const saved = await ApiService.saveExamen(examen);
@@ -96,19 +115,20 @@ const ExamenList: React.FC = () => {
       setShowForm(false);
       setEditing(null);
 
-      // 👉 Si c’est un ajout, ouvrir ExamenParcoursForm
       if (!isEdit && saved && saved.idExamen) {
         setTimeout(() => {
           setSelectedExamId(saved.idExamen);
           setShowExamenParcours(true);
         }, 300);
       }
+
+      return saved;
     } catch (err) {
-      alert("Erreur lors de l’enregistrement");
+      console.error("Erreur enregistrement examen:", err);
+      throw new Error("Erreur lors de l’enregistrement");
     }
   };
 
-  if (loading) return <p className="text-center text-gray-300">Chargement...</p>;
   if (error) return <p className="text-center text-red-400">{error}</p>;
 
   return (
@@ -117,7 +137,7 @@ const ExamenList: React.FC = () => {
       <div className="flex justify-between items-center mb-4">
         <input
           type="text"
-          placeholder="Rechercher un examen (matière, niveau, salle, date...)"
+          placeholder="Rechercher un examen..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="px-4 py-2 rounded-md text-gray-900 w-1/3 border border-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none transition-all duration-300"
@@ -130,61 +150,70 @@ const ExamenList: React.FC = () => {
         </button>
       </div>
 
-      {/* Table des examens */}
-      <TableList
-        title="Liste des Examens"
-        columns={[
-          { key: "matiere.nomMatiere", label: "Matière" },
-          { key: "niveau.codeNiveau", label: "Niveau" },
-          {
-            key: "dateExamen",
-            label: "Date",
-            render: (item) => formatDateFR(item.dateExamen),
-          },
-          {
-            key: "heureDebut",
-            label: "Heure Début",
-            render: (item) =>
-              item.heureDebut
-                ? new Date(item.heureDebut).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "",
-          },
-          {
-            key: "heureFin",
-            label: "Heure Fin",
-            render: (item) =>
-              item.heureFin
-                ? new Date(item.heureFin).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "",
-          },
-          {
-            key: "duree",
-            label: "Durée",
-            render: (item) => formatDuree(item.duree),
-          },
-          { key: "numeroSalle", label: "Salle" },
-          { key: "session", label: "Session" },
-        ]}
-        data={sortedExamens}
-        idKey="idExamen"
-        onAdd={() => {
-          setEditing(null);
-          setShowForm(true);
-        }}
-        onEdit={(item) => {
-          setEditing(item);
-          setShowForm(true);
-        }}
-        onDelete={handleDelete}
-      />
+      {/* Table ou Skeleton */}
+      {isLoading && examens.length === 0 ? (
+        <div className="p-4 space-y-2">
+          {[...Array(8)].map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </div>
+      ) : (
+        <TableList
+          title="Liste des Examens"
+          columns={[
+            { key: "matiere.nomMatiere", label: "Matière" },
+            { key: "niveau.codeNiveau", label: "Niveau" },
+            {
+              key: "dateExamen",
+              label: "Date",
+              render: (item) => formatDateFR(item.dateExamen),
+            },
+            {
+              key: "heureDebut",
+              label: "Heure Début",
+              render: (item) =>
+                item.heureDebut
+                  ? new Date(item.heureDebut).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "",
+            },
+            {
+              key: "heureFin",
+              label: "Heure Fin",
+              render: (item) =>
+                item.heureFin
+                  ? new Date(item.heureFin).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "",
+            },
+            {
+              key: "duree",
+              label: "Durée",
+              render: (item) => formatDuree(item.duree),
+            },
+            { key: "numeroSalle", label: "Salle" },
+            { key: "session", label: "Session" },
+          ]}
+          data={sortedExamens}
+          idKey="idExamen"
+          onAdd={() => {
+            setEditing(null);
+            setShowForm(true);
+          }}
+          onEdit={(item) => {
+            setEditing(item);
+            setShowForm(true);
+          }}
+          onDelete={handleDelete}
+          animateRows={true}
+        />
+      )}
 
-      {/* 🧭 Bouton flottant vers ExamenParcoursList */}
+      {/* Bouton flottant vers ExamenParcoursList */}
       <motion.button
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
@@ -194,7 +223,7 @@ const ExamenList: React.FC = () => {
         📘 Quels parcours ?
       </motion.button>
 
-      {/* 📋 Popup centré pour ExamenParcoursList */}
+      {/* Popup ExamenParcoursList */}
       <AnimatePresence>
         {showExamenParcoursList && (
           <motion.div
@@ -228,7 +257,7 @@ const ExamenList: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* ⚡️ Modales pour ExamenForm et ExamenParcoursForm */}
+      {/* Modales ExamenForm / ExamenParcoursForm */}
       <AnimatePresence>
         {showForm && (
           <motion.div

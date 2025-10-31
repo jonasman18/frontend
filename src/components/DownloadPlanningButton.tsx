@@ -90,7 +90,7 @@ const DownloadPlanningButton: React.FC = () => {
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = window.URL.createObjectURL(blob);
-      a.download = "planning_examens.pdf";
+      a.download = "EDT_examens.pdf";
       a.click();
       window.URL.revokeObjectURL(a.href);
     } catch (err) {

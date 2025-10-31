@@ -12,86 +12,89 @@ interface Props {
 }
 
 const ExamenParcoursForm: React.FC<Props> = ({ examenId, onSave, onClose }) => {
-  const [examens, setExamens] = useState<Examen[]>([]);
+  const [examen, setExamen] = useState<Examen | null>(null);
   const [parcoursList, setParcoursList] = useState<Parcours[]>([]);
-  const [selectedExam, setSelectedExam] = useState<number>(examenId ?? 0);
   const [selectedParcours, setSelectedParcours] = useState<number[]>([]);
   const [hadAssociations, setHadAssociations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Charger examens + parcours + associations existantes
+  // ✅ Charger uniquement les données nécessaires
   useEffect(() => {
-    setLoading(true);
-    Promise.all([ApiService.getExamens(), ApiService.getParcours()])
-      .then(async ([examData, parcData]) => {
-        setExamens(examData ?? []);
-        setParcoursList(parcData ?? []);
+    if (!examenId) return;
 
-        if (examenId) {
-          const all = await ApiService.getExamenParcours();
-          const current = all.filter((a) => a.examen?.idExamen === examenId);
-          setSelectedParcours(current.map((c) => c.parcours?.idParcours ?? 0));
-          setHadAssociations(current.length > 0);
-        }
+    setLoading(true);
+
+    Promise.all([
+      ApiService.getExamenById(examenId), // 🧩 charge uniquement cet examen
+      ApiService.getParcours(), // 🧩 tous les parcours
+      ApiService.getExamenParcours(), // 🧩 associations examen <-> parcours
+    ])
+      .then(([exam, parcours, examParcours]) => {
+        setExamen(exam);
+        setParcoursList(parcours ?? []);
+
+        const current = examParcours.filter((a) => a.examen?.idExamen === examenId);
+        setSelectedParcours(current.map((c) => c.parcours?.idParcours ?? 0));
+        setHadAssociations(current.length > 0);
       })
       .finally(() => setLoading(false));
   }, [examenId]);
 
-  // Toggle sélection parcours
+  // ✅ Sélection / désélection
   const toggleParcours = (id: number) => {
     setSelectedParcours((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
-  // Afficher alerte temporaire
+  // ✅ Alerte animée
   const showAlert = (type: "success" | "error", message: string) => {
     setAlert({ type, message });
-    setTimeout(() => setAlert(null), 3000);
+    setTimeout(() => setAlert(null), 2500);
   };
 
-  // Soumission
+  // ✅ Soumission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedExam) {
-      showAlert("error", "Veuillez sélectionner un examen.");
+    if (!examenId) {
+      showAlert("error", "Aucun examen sélectionné !");
       return;
     }
 
-    ApiService.updateExamenParcoursGlobal(selectedExam, selectedParcours)
+    ApiService.updateExamenParcoursGlobal(examenId, selectedParcours)
       .then(() => {
         showAlert(
           "success",
           hadAssociations
-            ? "✅ Mise à jour des parcours réussie !"
-            : "✅ Association ajoutée avec succès !"
+            ? "✅ Parcours mis à jour avec succès !"
+            : "✅ Parcours associés à l'examen !"
         );
 
         setTimeout(() => {
           onSave();
           onClose();
-        }, 1000);
+        }, 900);
       })
-      .catch(() => showAlert("error", "❌ Erreur lors de la mise à jour globale."));
+      .catch(() => showAlert("error", "❌ Erreur lors de la mise à jour."));
   };
 
   return (
     <div className="relative">
-      {/* 🌟 Alerte stylée et centrée */}
+      {/* 🌟 Popup d’alerte */}
       <AnimatePresence>
         {alert && (
           <motion.div
             key="alert"
-            initial={{ opacity: 0, y: -30, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-            className={`fixed top-8 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl text-white font-semibold text-center z-[1000] ${
+            initial={{ opacity: 0, y: -25 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.25 }}
+            className={`fixed top-8 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-xl text-white font-semibold text-center z-[1000] ${
               alert.type === "success"
-                ? "bg-emerald-600/95 backdrop-blur-sm border border-emerald-400/40"
-                : "bg-red-600/95 backdrop-blur-sm border border-red-400/40"
+                ? "bg-emerald-600/95 backdrop-blur-md border border-emerald-400/40"
+                : "bg-red-600/95 backdrop-blur-md border border-red-400/40"
             }`}
           >
             {alert.message}
@@ -99,48 +102,65 @@ const ExamenParcoursForm: React.FC<Props> = ({ examenId, onSave, onClose }) => {
         )}
       </AnimatePresence>
 
-      {/* 🔶 Formulaire principal */}
+      {/* 🧭 Formulaire principal */}
       <ModalForm
-        title="Quels parcours ?"
+        title="🧭 Quels parcours ?"
         onClose={onClose}
         onSubmit={handleSubmit}
         submitLabel="Enregistrer"
       >
         {loading ? (
-          <div className="text-center text-gray-300">Chargement...</div>
+          <div className="text-center text-gray-300 py-4 animate-pulse">
+            Chargement des parcours...
+          </div>
         ) : (
           <>
-            {/* Sélecteur d’examen */}
-            <div>
-              <label className="block text-sm font-medium">Examen</label>
-              <select
-                value={selectedExam}
-                onChange={(e) => setSelectedExam(Number(e.target.value))}
-                disabled={!!examenId}
-                className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
-              >
-                <option value={0}>-- Sélectionner un examen --</option>
-                {examens.map((e) => (
-                  <option key={e.idExamen} value={e.idExamen}>
-                    {e.matiere?.nomMatiere} — {e.dateExamen}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* ✅ Info de l’examen */}
+            {examen && (
+              <div className="mb-4 text-sm text-emerald-200 bg-emerald-950/50 border border-emerald-700/40 rounded-xl p-3 shadow-inner">
+                <p className="font-semibold text-emerald-300 text-lg">
+                  📘 {examen.matiere?.nomMatiere ?? "Matière inconnue"}
+                </p>
+                <p>
+                  📅{" "}
+                  {examen.dateExamen
+                    ? new Date(examen.dateExamen).toLocaleDateString("fr-FR")
+                    : "Date non précisée"}{" "}
+                  — 🕒{" "}
+                  {examen.heureDebut
+                    ? new Date(examen.heureDebut).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "--:--"}
+                </p>
+                {examen.niveau?.codeNiveau && (
+                  <p>🎓 Niveau : {examen.niveau.codeNiveau}</p>
+                )}
+                {examen.numeroSalle && <p>🏫 Salle : {examen.numeroSalle}</p>}
+              </div>
+            )}
 
-            {/* Sélecteur multi-parcours */}
-            <div className="mt-4">
-              <label className="block text-sm font-medium mb-1">Parcours</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+            {/* ✅ Sélecteur de parcours */}
+            <div>
+              <label className="block text-sm font-medium text-emerald-200 mb-2">
+                Parcours concernés :
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {parcoursList.map((p) => (
                   <label
                     key={p.idParcours}
-                    className="flex items-center gap-2 cursor-pointer bg-emerald-800 rounded-md px-2 py-1 hover:bg-emerald-700 transition"
+                    className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-xl border-2 transition-all duration-200 text-sm font-medium ${
+                      selectedParcours.includes(p.idParcours ?? 0)
+                        ? "bg-emerald-600/70 border-emerald-400 text-white"
+                        : "bg-emerald-950/50 border-emerald-700 hover:bg-emerald-800/40 text-gray-200"
+                    }`}
                   >
                     <input
                       type="checkbox"
                       checked={selectedParcours.includes(p.idParcours ?? 0)}
                       onChange={() => toggleParcours(p.idParcours ?? 0)}
+                      className="accent-emerald-500"
                     />
                     {p.codeParcours}
                   </label>
