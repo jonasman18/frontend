@@ -1,71 +1,83 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useDeferredValue } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ApiService } from "../services/ApiService";
 import type { Examen } from "../models/Examen";
+import type { ExamenParcours } from "../models/ExamenParcours";
 import ExamenForm from "./ExamenForm";
-import ExamenParcoursForm from "./ExamenParcoursForm";
-import ExamenParcoursList from "./ExamenParcoursList";
-import TableList from "./TableList";
 
-function formatDuree(num?: number): string {
-  if (num == null) return "";
-  const heures = Math.floor(num);
-  const minutes = Math.round((num - heures) * 60);
-  return minutes === 0 ? `${heures}H` : `${heures}H${minutes}`;
-}
-
-function formatDateFR(dateStr?: string): string {
+// 🕒 Utils
+const formatDateFR = (dateStr?: string): string => {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1)
+  const jours = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+  return `${jours[d.getDay()]} ${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1)
     .toString()
     .padStart(2, "0")}/${d.getFullYear()}`;
-}
+};
 
-// 💠 SkeletonRow pour effet de chargement fluide
-const SkeletonRow = () => (
-  <div className="animate-pulse flex justify-between border-b border-emerald-800 py-2">
-    {[...Array(7)].map((_, i) => (
-      <div key={i} className="h-4 bg-emerald-800/40 rounded w-[12%]" />
-    ))}
-  </div>
-);
+const formatHeures = (debut?: string, fin?: string): string => {
+  if (!debut || !fin) return "";
+  const d = new Date(debut);
+  const f = new Date(fin);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const diffMs = f.getTime() - d.getTime();
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffM = Math.floor((diffMs / (1000 * 60)) % 60);
+  const duree = diffH > 0 ? `${diffH}h${diffM > 0 ? diffM : ""}` : `${diffM} min`;
+  return `${pad(d.getHours())}h${pad(d.getMinutes())}-${pad(f.getHours())}h${pad(
+    f.getMinutes()
+  )} (${duree})`;
+};
 
 const ExamenList: React.FC = () => {
   const [examens, setExamens] = useState<Examen[]>([]);
-  const [filteredExamens, setFilteredExamens] = useState<Examen[]>([]);
+  const [examParcours, setExamParcours] = useState<Record<number, string[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterNiveau, setFilterNiveau] = useState("all");
+  const [filterDate, setFilterDate] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Examen | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [sortAsc, setSortAsc] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sortAsc, setSortAsc] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [fullscreen, setFullscreen] = useState(false);
 
-  // ✅ États pour ExamenParcours
-  const [showExamenParcours, setShowExamenParcours] = useState(false);
-  const [selectedExamId, setSelectedExamId] = useState<number | undefined>();
-  const [showExamenParcoursList, setShowExamenParcoursList] = useState(false);
+  const deferredSearch = useDeferredValue(searchTerm);
 
-  // ⚡ Charger examens (avec cache local instantané)
-  const loadExamens = async () => {
+  // ⚡ Chargement + cache localStorage
+  const loadExamens = async (forceRefresh = false) => {
     try {
-      setIsLoading(true);
-      // 1️⃣ Charger depuis le cache local (affichage instantané)
-      const cached = localStorage.getItem("examens_cache");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        setExamens(parsed);
-        setFilteredExamens(parsed);
+      if (!forceRefresh) {
+        const cached = localStorage.getItem("examens_cache");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setExamens(parsed);
+          setIsLoading(false);
+        }
+        const cachedEP = localStorage.getItem("exam_parcours_cache");
+        if (cachedEP) setExamParcours(JSON.parse(cachedEP));
       }
 
-      // 2️⃣ Charger depuis le backend en parallèle
-      const data = await ApiService.getUpcomingExamens();
-      setExamens(data);
-      setFilteredExamens(data);
-      localStorage.setItem("examens_cache", JSON.stringify(data));
+      // 🌀 Rechargement en arrière-plan
+      const [examData, epData]: [Examen[], ExamenParcours[]] = await Promise.all([
+        ApiService.getUpcomingExamens(),
+        ApiService.getExamenParcours(),
+      ]);
+
+      setExamens(examData);
+      localStorage.setItem("examens_cache", JSON.stringify(examData));
+
+      const map: Record<number, string[]> = {};
+      epData.forEach((a) => {
+        if (a.examen?.idExamen && a.parcours?.codeParcours) {
+          if (!map[a.examen.idExamen]) map[a.examen.idExamen] = [];
+          map[a.examen.idExamen].push(a.parcours.codeParcours);
+        }
+      });
+      setExamParcours(map);
+      localStorage.setItem("exam_parcours_cache", JSON.stringify(map));
     } catch (err) {
-      console.error(err);
-      setError("Impossible de charger les examens");
+      console.error("⚠️ Erreur chargement examens :", err);
     } finally {
       setIsLoading(false);
     }
@@ -75,199 +87,255 @@ const ExamenList: React.FC = () => {
     loadExamens();
   }, []);
 
-  // 🔍 Recherche dynamique
-  useEffect(() => {
-    const term = searchTerm.toLowerCase();
-    setFilteredExamens(
-      examens.filter(
-        (e) =>
-          e.matiere?.nomMatiere?.toLowerCase().includes(term) ||
-          e.niveau?.codeNiveau?.toLowerCase().includes(term) ||
-          e.session?.toLowerCase().includes(term) ||
-          e.numeroSalle?.toLowerCase().includes(term) ||
-          e.dateExamen?.toLowerCase().includes(term)
-      )
-    );
-  }, [searchTerm, examens]);
+  // 🔍 Filtrage et tri optimisés
+  const filteredExamens = useMemo(() => {
+    const term = deferredSearch.toLowerCase();
+    return examens.filter((e) => {
+      const matchSearch =
+        e.matiere?.nomMatiere?.toLowerCase().includes(term) ||
+        e.niveau?.codeNiveau?.toLowerCase().includes(term) ||
+        e.numeroSalle?.toLowerCase().includes(term);
+      const matchNiveau = filterNiveau === "all" || e.niveau?.codeNiveau === filterNiveau;
+      const matchDate = !filterDate || e.dateExamen?.startsWith(filterDate);
+      return matchSearch && matchNiveau && matchDate;
+    });
+  }, [deferredSearch, examens, filterNiveau, filterDate]);
 
-  // 📅 Tri par date
-  const sortedExamens = [...filteredExamens].sort((a, b) => {
-    const da = new Date(a.dateExamen ?? "").getTime();
-    const db = new Date(b.dateExamen ?? "").getTime();
-    return sortAsc ? db - da : da - db;
-  });
+  const sortedExamens = useMemo(() => {
+    return [...filteredExamens].sort((a, b) => {
+      const da = new Date(a.dateExamen ?? "").getTime();
+      const db = new Date(b.dateExamen ?? "").getTime();
+      return sortAsc ? db - da : da - db;
+    });
+  }, [filteredExamens, sortAsc]);
+
+  // 📅 Regroupement par date
+  const groupedByDate = useMemo(() => {
+    const groups: Record<string, Examen[]> = {};
+    sortedExamens.forEach((ex) => {
+      const date = formatDateFR(ex.dateExamen);
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(ex);
+    });
+    return Object.entries(groups).sort(([a], [b]) => {
+      const da = new Date(a.split(" ").pop()!.split("/").reverse().join("-")).getTime();
+      const db = new Date(b.split(" ").pop()!.split("/").reverse().join("-")).getTime();
+      return da - db;
+    });
+  }, [sortedExamens]);
 
   // 🗑️ Suppression
-  const handleDelete = (id: number | string) => {
+  const handleDelete = async (id?: number) => {
+    if (!id) return;
     if (confirm("Supprimer cet examen ?")) {
-      ApiService.deleteExamen(Number(id))
-        .then(() => loadExamens())
-        .catch(() => alert("Erreur lors de la suppression"));
+      await ApiService.deleteExamen(id);
+      loadExamens(true);
     }
   };
 
-  // 💾 Sauvegarde (ajout / modification)
+  // 💾 Sauvegarde
   const handleSave = async (examen: Examen): Promise<Examen> => {
-    try {
-      const isEdit = !!examen.idExamen;
-      const saved = await ApiService.saveExamen(examen);
-      loadExamens();
-      setShowForm(false);
-      setEditing(null);
-
-      if (!isEdit && saved && saved.idExamen) {
-        setTimeout(() => {
-          setSelectedExamId(saved.idExamen);
-          setShowExamenParcours(true);
-        }, 300);
-      }
-
-      return saved;
-    } catch (err) {
-      console.error("Erreur enregistrement examen:", err);
-      throw new Error("Erreur lors de l’enregistrement");
-    }
+    const saved = await ApiService.saveExamen(examen);
+    await loadExamens(true);
+    setShowForm(false);
+    setEditing(null);
+    return saved;
   };
-
-  if (error) return <p className="text-center text-red-400">{error}</p>;
 
   return (
-    <div className="space-y-4 relative pb-20">
-      {/* Barre recherche / tri */}
-      <div className="flex justify-between items-center mb-4">
-        <input
-          type="text"
-          placeholder="Rechercher un examen..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="px-4 py-2 rounded-md text-gray-900 w-1/3 border border-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none transition-all duration-300"
-        />
-        <button
-          onClick={() => setSortAsc(!sortAsc)}
-          className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-md font-semibold transition"
+    <motion.div
+      layout
+      className={`p-6 bg-emerald-950 text-white rounded-xl shadow-lg relative transition-all duration-500 ${
+        fullscreen ? "fixed inset-0 z-50 p-10 overflow-y-auto" : ""
+      }`}
+    >
+      {/* Barre supérieure */}
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
+        <h1
+          className="text-2xl font-bold text-emerald-300 cursor-pointer hover:text-emerald-400 transition"
+          onClick={() => setFullscreen(!fullscreen)}
         >
-          {sortAsc ? "⬇️" : "⬆️"}
-        </button>
+          📘 Examens {fullscreen && "(plein écran)"}
+        </h1>
+
+        <div className="flex flex-wrap gap-2 items-center">
+          <select
+            value={filterNiveau}
+            onChange={(e) => setFilterNiveau(e.target.value)}
+            className="bg-emerald-900 border border-emerald-600 rounded-md px-3 py-2"
+          >
+            <option value="all">🌍 Tous niveaux</option>
+            {["L1", "L2", "L3", "M1", "M2"].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="bg-emerald-900 border border-emerald-600 rounded-md px-3 py-2 text-white"
+          />
+
+          <input
+            type="text"
+            placeholder="🔍 Rechercher..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="px-3 py-2 rounded-md text-gray-900 border border-emerald-600 outline-none"
+          />
+
+          <button
+            onClick={() => setSortAsc(!sortAsc)}
+            className="bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-md"
+          >
+            {sortAsc ? "⬇️" : "⬆️"}
+          </button>
+
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setViewMode(viewMode === "table" ? "cards" : "table")}
+            className="bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-md font-semibold"
+          >
+            {viewMode === "table" ? "🗂️ Vue cartes" : "📋 Vue tableau"}
+          </motion.button>
+
+          <button
+            onClick={() => {
+              setEditing(null);
+              setShowForm(true);
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-md font-semibold"
+          >
+            ➕ Nouvel Examen
+          </button>
+        </div>
       </div>
 
-      {/* Table ou Skeleton */}
-      {isLoading && examens.length === 0 ? (
-        <div className="p-4 space-y-2">
-          {[...Array(8)].map((_, i) => (
-            <SkeletonRow key={i} />
-          ))}
-        </div>
-      ) : (
-        <TableList
-          title="Liste des Examens"
-          columns={[
-            { key: "matiere.nomMatiere", label: "Matière" },
-            { key: "niveau.codeNiveau", label: "Niveau" },
-            {
-              key: "dateExamen",
-              label: "Date",
-              render: (item) => formatDateFR(item.dateExamen),
-            },
-            {
-              key: "heureDebut",
-              label: "Heure Début",
-              render: (item) =>
-                item.heureDebut
-                  ? new Date(item.heureDebut).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "",
-            },
-            {
-              key: "heureFin",
-              label: "Heure Fin",
-              render: (item) =>
-                item.heureFin
-                  ? new Date(item.heureFin).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "",
-            },
-            {
-              key: "duree",
-              label: "Durée",
-              render: (item) => formatDuree(item.duree),
-            },
-            { key: "numeroSalle", label: "Salle" },
-            { key: "session", label: "Session" },
-          ]}
-          data={sortedExamens}
-          idKey="idExamen"
-          onAdd={() => {
-            setEditing(null);
-            setShowForm(true);
-          }}
-          onEdit={(item) => {
-            setEditing(item);
-            setShowForm(true);
-          }}
-          onDelete={handleDelete}
-          animateRows={true}
-        />
-      )}
-
-      {/* Bouton flottant vers ExamenParcoursList */}
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setShowExamenParcoursList(true)}
-        className="fixed bottom-6 right-6 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-full shadow-xl font-semibold transition-all"
-      >
-        📘 Quels parcours ?
-      </motion.button>
-
-      {/* Popup ExamenParcoursList */}
-      <AnimatePresence>
-        {showExamenParcoursList && (
-          <motion.div
-            key="examen-parcours-list"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      {/* Vue dynamique */}
+      <AnimatePresence mode="wait">
+        {viewMode === "table" ? (
+          <motion.div 
+            key="table" 
+            initial={{ opacity: 0, y: 20, scale: 0.98 }} 
+            animate={{ opacity: 1, y: 0, scale: 1 }} 
+            exit={{ opacity: 0, y: -20, scale: 0.98 }} 
+            transition={{ duration: 0.3, ease: "easeInOut" }}
           >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="bg-emerald-950 border border-emerald-700 shadow-2xl rounded-2xl w-[85%] max-w-4xl p-6 max-h-[80vh] overflow-y-auto"
-            >
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-semibold text-emerald-200">
-                  📋 Associations Examens ↔ Parcours
-                </h3>
-                <button
-                  onClick={() => setShowExamenParcoursList(false)}
-                  className="text-red-400 hover:text-red-300 text-sm font-medium"
+            <div className="overflow-x-auto border border-emerald-700 rounded-lg">
+              {isLoading ? (
+                <p className="text-center text-emerald-400 py-6">Chargement...</p>
+              ) : groupedByDate.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-emerald-800 text-white">
+                    <tr>
+                      <th className="px-4 py-2 border-b border-emerald-700 w-1/6">Date</th>
+                      <th className="px-4 py-2 border-b border-emerald-700">Examens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedByDate.map(([date, liste]) => (
+                      <tr key={date}>
+                        <td className="px-4 py-3 border-b border-emerald-800 font-semibold text-emerald-300 align-top">
+                          {date}
+                        </td>
+                        <td className="px-4 py-3 border-b border-emerald-800">
+                          <div className="flex flex-col gap-2">
+                            {liste.map((ex) => (
+                              <div
+                                key={ex.idExamen}
+                                className="flex justify-between items-center bg-emerald-900/40 px-3 py-2 rounded-md hover:bg-emerald-800 transition"
+                              >
+                                <div>
+                                  <span className="font-semibold">{ex.matiere?.nomMatiere}</span>
+                                  <div className="text-sm text-emerald-300">
+                                    {ex.niveau?.codeNiveau} • {formatHeures(ex.heureDebut, ex.heureFin)} • Salle{" "}
+                                    {ex.numeroSalle}
+                                  </div>
+                                  {examParcours[ex.idExamen ?? 0] && (
+                                    <div className="text-xs text-emerald-400 mt-1">
+                                      Parcours : {examParcours[ex.idExamen ?? 0].join(" / ")}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditing(ex);
+                                      setShowForm(true);
+                                    }}
+                                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md text-sm"
+                                  >
+                                    ✏
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(ex.idExamen)}
+                                    className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-md text-sm"
+                                  >
+                                    🗑
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-center text-emerald-400 italic py-6">Aucun examen trouvé.</p>
+              )}
+            </div>
+          </motion.div>
+        ) : (
+          // Vue cartes
+          <motion.div 
+            key="cards" 
+            initial={{ opacity: 0, y: 20, scale: 0.98 }} 
+            animate={{ opacity: 1, y: 0, scale: 1 }} 
+            exit={{ opacity: 0, y: -20, scale: 0.98 }} 
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {groupedByDate.map(([date, liste]) => (
+                <div
+                  key={date}
+                  className="bg-emerald-900/50 border border-emerald-700 rounded-xl p-4 shadow-md"
                 >
-                  ✖ Fermer
-                </button>
-              </div>
-              <ExamenParcoursList />
-            </motion.div>
+                  <h3 className="text-lg font-semibold text-emerald-300 mb-3">{date}</h3>
+                  <div className="flex flex-col gap-2">
+                    {liste.map((ex) => (
+                      <div
+                        key={ex.idExamen}
+                        className="bg-emerald-950/60 rounded-md p-3 hover:bg-emerald-800 transition"
+                      >
+                        <span className="font-semibold">{ex.matiere?.nomMatiere}</span>
+                        <div className="text-sm text-emerald-300">
+                          {ex.niveau?.codeNiveau} • {formatHeures(ex.heureDebut, ex.heureFin)} • Salle{" "}
+                          {ex.numeroSalle}
+                        </div>
+                        {examParcours[ex.idExamen ?? 0] && (
+                          <div className="text-xs text-emerald-400 mt-1">
+                            Parcours : {examParcours[ex.idExamen ?? 0].join(" / ")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Modales ExamenForm / ExamenParcoursForm */}
+      {/* Modales */}
       <AnimatePresence>
         {showForm && (
-          <motion.div
-            key="examen-form"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-50"
-          >
+          <motion.div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">
             <ExamenForm
               examen={editing ?? undefined}
               onSave={handleSave}
@@ -278,32 +346,8 @@ const ExamenList: React.FC = () => {
             />
           </motion.div>
         )}
-
-        {showExamenParcours && selectedExamId && (
-          <motion.div
-            key="examen-parcours-form"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 30 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50"
-          >
-            <ExamenParcoursForm
-              examenId={selectedExamId}
-              onSave={() => {
-                setShowExamenParcours(false);
-                setSelectedExamId(undefined);
-                loadExamens();
-              }}
-              onClose={() => {
-                setShowExamenParcours(false);
-                setSelectedExamId(undefined);
-              }}
-            />
-          </motion.div>
-        )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 };
 

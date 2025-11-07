@@ -5,6 +5,7 @@ import type { Matiere } from "../models/Matiere";
 import type { Niveau } from "../models/Niveau";
 import type { Salle } from "../models/Salle";
 import type { Enseignant } from "../models/Enseignant";
+import type { Parcours } from "../models/Parcours";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ExamenFormProps {
@@ -14,14 +15,13 @@ interface ExamenFormProps {
 }
 
 const initialForm = (): Examen => ({
-  matiere: { nomMatiere: "" },
+  matiere: { nomMatiere: "", niveau: { codeNiveau: "" } },
   niveau: { codeNiveau: "" },
   dateExamen: "",
   heureDebut: "",
   heureFin: "",
   duree: 0,
   numeroSalle: "",
-  session: "",
 });
 
 function pad(n: number) {
@@ -93,7 +93,6 @@ function extractTimePart(timeStr?: string): string {
 }
 
 const BUFFER_MINUTES = 0; // Buffer supprimé (0 minutes)
-const PAUSE_MINUTES = 30; // Pause de 30 minutes
 
 const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
   const [formData, setFormData] = useState<Examen>(examen ?? initialForm());
@@ -109,18 +108,14 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [enseignants, setEnseignants] = useState<Enseignant[]>([]);
   const [selectedEnseignantIds, setSelectedEnseignantIds] = useState<number[]>([]);
+  const [parcours, setParcours] = useState<Parcours[]>([]);
+  const [selectedParcoursIds, setSelectedParcoursIds] = useState<number[]>([]);
 
-  // popup conflit
-  const [showConflitPopup, setShowConflitPopup] = useState(false);
-  const [conflits, setConflits] = useState<
-    { matiere: string; salle: string; date: string; debut: string; fin: string }[]
-  >([]);
+  // État pour les examens du jour (pour optimiser les checks)
+  const [allExamens, setAllExamens] = useState<Examen[]>([]);
 
-  // Suggestions
-  const [suggestedHeureDebut, setSuggestedHeureDebut] = useState<string | null>(null);
-  const [suggestedHeureFin, setSuggestedHeureFin] = useState<string | null>(null);
-  const [hasValidSuggestion, setHasValidSuggestion] = useState(false);
-  const [suggestionMessage, setSuggestionMessage] = useState<string>('');
+  // État pour les salles désactivées (floutées)
+  const [disabledSalles, setDisabledSalles] = useState<string[]>([]);
 
   // popup succès
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
@@ -139,17 +134,95 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
 
   // --- Charger données
   useEffect(() => {
-    Promise.all([ApiService.getMatieres(), ApiService.getNiveaux(), ApiService.getSalles()])
-      .then(([m, n, s]) => {
+    Promise.all([ApiService.getMatieres(), ApiService.getNiveaux(), ApiService.getSalles(), ApiService.getParcours()])
+      .then(([m, n, s, p]) => {
         setMatieres(m);
         setFilteredMatieres(m);
         setNiveaux(n);
         setSalles(s);
+        setParcours(p ?? []);
       })
       .catch((err) => {
         console.error("Erreur chargement données:", err);
       });
   }, []);
+
+  // Charger les examens quand la date change (optimisation) - ✅ Avec params pour pagination
+  useEffect(() => {
+    if (!formData.dateExamen) {
+      setAllExamens([]);
+      setDisabledSalles([]);
+      return;
+    }
+    ApiService.getExamens({ page: 0, size: 100 })  // ✅ Fournit les args manquants
+      .then((response) => {
+        // Si c'est une Page, extrait le content ; sinon assume array
+        const examensData = response.content ? response.content : response;
+        setAllExamens(examensData);
+      })
+      .catch((err) => {
+        console.error("Erreur chargement examens:", err);
+        setAllExamens([]);
+      });
+  }, [formData.dateExamen]);
+
+  // Calculer les salles désactivées (synchrone après fetch)
+  useEffect(() => {
+    if (!allExamens.length || !formData.heureDebut || !salles.length) {
+      setDisabledSalles([]);
+      return;
+    }
+
+    const selectedDate = normalizeDate(formData.dateExamen) ?? formData.dateExamen;
+    const debut = parseLocalDateTime(formData.heureDebut);
+    if (!debut || !selectedDate) {
+      setDisabledSalles([]);
+      return;
+    }
+
+    const dur = dureeHeure + dureeMinute / 60;
+    const fin = new Date(debut.getTime() + dur * 60 * 60 * 1000);
+
+    const disabled: string[] = [];
+    for (const salle of salles) {
+      const salleNum = salle.numeroSalle;
+      let hasConflict = false;
+
+      for (const ex of allExamens) {
+        if (formData.idExamen && ex.idExamen === formData.idExamen) continue; // Exclure l'examen en édition
+        const exDate = normalizeDate(ex.dateExamen) ?? ex.dateExamen;
+        if (exDate !== selectedDate) continue;
+
+        const existingSalles = ex.numeroSalle?.split(",").map((s: string) => s.trim()) || [];
+        if (!existingSalles.includes(salleNum)) continue;
+
+        const exDebutStr = `${exDate}T${extractTimePart(ex.heureDebut)}`;
+        const exFinStr = `${exDate}T${extractTimePart(ex.heureFin)}`;
+        const exDebut = parseLocalDateTime(exDebutStr);
+        const exFin = parseLocalDateTime(exFinStr);
+        if (!exDebut || !exFin) continue;
+
+        const bufferMs = BUFFER_MINUTES * 60 * 1000;
+        const overlap = (debut.getTime() < exFin.getTime() + bufferMs) && (fin.getTime() > exDebut.getTime() - bufferMs);
+        if (overlap) {
+          hasConflict = true;
+          break;
+        }
+      }
+
+      if (hasConflict) {
+        disabled.push(salleNum);
+      }
+    }
+
+    setDisabledSalles(disabled);
+
+    // Auto-désélection des salles maintenant désactivées
+    const newlyDisabled = disabled.filter(s => selectedSalles.includes(s));
+    if (newlyDisabled.length > 0) {
+      setSelectedSalles(prev => prev.filter(s => !disabled.includes(s))); // Retire les conflictuelles
+    }
+  }, [allExamens, formData.heureDebut, dureeHeure, dureeMinute, formData.idExamen, salles, selectedSalles]);
 
   // --- Si édition : normalise et reconstruit les datetimes complets
   useEffect(() => {
@@ -193,6 +266,11 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
             setSelectedEnseignantIds(ens.map((e: Enseignant) => e.idEnseignant ?? 0));
           })
           .catch(() => {});
+        ApiService.getParcoursByExamen(examen.idExamen)
+          .then((pars) => {
+            setSelectedParcoursIds(pars.map((p: Parcours) => p.idParcours ?? 0));
+          })
+          .catch(() => {});
       }
     }
   }, [examen]);
@@ -207,11 +285,23 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
     }
   }, [formData.matiere?.idMatiere]);
 
-  // --- Filtrage matières
+  // --- Filtrage matières (par niveau et recherche)
   useEffect(() => {
     const query = searchMatiere.toLowerCase();
-    setFilteredMatieres(matieres.filter((m) => m.nomMatiere.toLowerCase().includes(query)));
-  }, [searchMatiere, matieres]);
+    const selectedId = formData.niveau?.idNiveau;
+
+    let filtered = matieres;
+    if (selectedId) {
+      const selectedNiv = niveaux.find((n) => n.idNiveau === selectedId);
+      if (selectedNiv) {
+        const code = selectedNiv.codeNiveau;
+        filtered = matieres.filter((m) => m.niveau?.codeNiveau === code);
+      }
+    }
+
+    filtered = filtered.filter((m) => m.nomMatiere.toLowerCase().includes(query));
+    setFilteredMatieres(filtered);
+  }, [searchMatiere, matieres, formData.niveau?.idNiveau, niveaux]);
 
   // --- Liens date ↔ heures (amélioré pour gérer time-only)
   useEffect(() => {
@@ -293,7 +383,9 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Ignorer le toggle si la salle est désactivée
   const toggleSalle = (numero: string) => {
+    if (disabledSalles.includes(numero)) return; // Prévention de sélection
     setSelectedSalles((prev) => (prev.includes(numero) ? prev.filter((s) => s !== numero) : [...prev, numero]));
   };
 
@@ -301,92 +393,11 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
     setSelectedEnseignantIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  // 🛡️ Vérification de conflit — détecte tous overlaps (intérieur inclus)
-  async function checkConflits(): Promise<boolean> {
-    try {
-      const allExamens = await ApiService.getExamens();
-
-      const selectedDate = normalizeDate(formData.dateExamen) ?? formData.dateExamen;
-      const debut = parseLocalDateTime(formData.heureDebut);
-      const fin = parseLocalDateTime(formData.heureFin);
-      if (!debut || !fin || !selectedDate) return false;
-
-      const conflictsFound: { matiere: string; salle: string; date: string; debut: string; fin: string }[] = [];
-      let maxEndTime = 0;
-
-      for (const ex of allExamens) {
-        if (formData.idExamen && ex.idExamen === formData.idExamen) continue;
-        const exDate = normalizeDate(ex.dateExamen) ?? ex.dateExamen;
-        if (!exDate || exDate !== selectedDate) continue;
-        if (!ex.numeroSalle || !ex.heureDebut || !ex.heureFin) continue;
-
-        const existingSalles = ex.numeroSalle.split(",").map((s: string) => s.trim());
-        const intersect = selectedSalles.filter((s) => existingSalles.includes(s));
-        if (intersect.length === 0) continue;
-
-        // Reconstruit les datetimes complets pour les exams existants (cas legacy time-only)
-        const exDebutStr = `${exDate}T${extractTimePart(ex.heureDebut)}`;
-        const exFinStr = `${exDate}T${extractTimePart(ex.heureFin)}`;
-        const exDebut = parseLocalDateTime(exDebutStr);
-        const exFin = parseLocalDateTime(exFinStr);
-        if (!exDebut || !exFin) continue;
-
-        const exDebutTime = exDebut.getTime();
-        const exFinTime = exFin.getTime();
-        const selDebTime = debut.getTime();
-        const selFinTime = fin.getTime();
-
-        // Détection d'overlap complet : détecte si le nouveau créneau chevauche l'existant
-        // (y compris partiellement au début/fin, ou entièrement contenu dedans, ex. 14h-16h vs 13h-15h / 15h-16h / 14h30-15h30)
-        // sans buffer (0 minutes)
-        const bufferMs = BUFFER_MINUTES * 60 * 1000;
-        const chev = (selDebTime < exFinTime + bufferMs) && (selFinTime > exDebutTime - bufferMs);
-        if (chev) {
-          maxEndTime = Math.max(maxEndTime, exFinTime);
-          for (const salle of intersect) {
-            conflictsFound.push({
-              matiere: ex.matiere?.nomMatiere ?? "(matière inconnue)",
-              salle,
-              date: ex.dateExamen,
-              debut: formatTime(ex.heureDebut),
-              fin: formatTime(ex.heureFin),
-            });
-          }
-        }
-      }
-
-      if (conflictsFound.length > 0) {
-        const currentDurHours = dureeHeure + dureeMinute / 60;
-        const baseDateStr = selectedDate;
-        const eightAM = parseLocalDateTime(baseDateStr + 'T08:00')!;
-        const sixPM = parseLocalDateTime(baseDateStr + 'T18:00')!;
-
-        let suggestedStart = new Date(Math.max(maxEndTime + (BUFFER_MINUTES + PAUSE_MINUTES) * 60 * 1000, eightAM.getTime()));
-        let suggestedEnd = new Date(suggestedStart.getTime() + currentDurHours * 60 * 60 * 1000);
-
-        if (suggestedEnd.getTime() > sixPM.getTime()) {
-          setSuggestedHeureDebut(null);
-          setSuggestedHeureFin(null);
-          setHasValidSuggestion(false);
-          setSuggestionMessage("Aucun créneau disponible aujourd'hui entre 8h et 18h compte tenu des conflits et de la durée de l'examen.");
-        } else {
-          setSuggestedHeureDebut(formatLocalDateTime(suggestedStart));
-          setSuggestedHeureFin(formatLocalDateTime(suggestedEnd));
-          setHasValidSuggestion(true);
-          setSuggestionMessage(`Suggestion de résolution (avec ${PAUSE_MINUTES} min de pause) : Débuter à ${formatTime(formatLocalDateTime(suggestedStart))} pour finir à ${formatTime(formatLocalDateTime(suggestedEnd))}.`);
-        }
-
-        setConflits(conflictsFound);
-        setShowConflitPopup(true);
-        return true;
-      }
-
-      return false;
-    } catch (err) {
-      console.error("Erreur checkConflits:", err);
-      return false;
-    }
-  }
+  const toggleParcours = (id: number) => {
+    setSelectedParcoursIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,8 +422,16 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
       return;
     }
 
-    const hasConflict = await checkConflits();
-    if (hasConflict) {
+    // Validation des salles (non null/vide)
+    if (selectedSalles.length === 0) {
+      setError("Veuillez sélectionner au moins une salle.");
+      setLoading(false);
+      return;
+    }
+
+    // Validation des parcours
+    if (selectedParcoursIds.length === 0) {
+      setError("Veuillez sélectionner au moins un parcours.");
       setLoading(false);
       return;
     }
@@ -422,6 +441,7 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
       matiere: {
         idMatiere: Number(matiereId),
         nomMatiere: matieres.find((m) => m.idMatiere === Number(matiereId))?.nomMatiere || "",
+        niveau: undefined
       },
       niveau: {
         idNiveau: Number(niveauId),
@@ -442,6 +462,14 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
           await ApiService.saveExamenEnseignants(saved.idExamen, selectedEnseignantIds);
         } catch (err) {
           console.error("Erreur sauvegarde enseignants:", err);
+        }
+      }
+
+      if (selectedParcoursIds.length > 0 && saved.idExamen) {
+        try {
+          await ApiService.updateExamenParcoursGlobal(saved.idExamen, selectedParcoursIds);
+        } catch (err) {
+          console.error("Erreur sauvegarde parcours:", err);
         }
       }
 
@@ -496,8 +524,39 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3 pr-2 -mr-2">
-          {/* Matière + Niveau */}
+          {/* Niveau + Matière */}
           <div className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">
+                Niveau
+              </label>
+              <select
+                value={formData.niveau?.idNiveau ?? ""}
+                onChange={(e) => {
+                  const newId = Number(e.target.value);
+                  const newNiv = niveaux.find((n) => n.idNiveau === newId);
+                  setFormData((p) => {
+                    const newNiveau = newNiv || { idNiveau: newId, codeNiveau: "" };
+                    const resetMatiere = p.matiere && newNiv && p.matiere.niveau?.codeNiveau !== newNiv.codeNiveau;
+                    return {
+                      ...p,
+                      niveau: newNiveau,
+                      ...(resetMatiere ? { matiere: { nomMatiere: "", niveau: newNiveau } } : {}),
+                    };
+                  });
+                }}
+                required
+                className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
+              >
+                <option value="">-- Sélectionner --</option>
+                {niveaux.map((n) => (
+                  <option key={n.idNiveau} value={n.idNiveau}>
+                    {n.codeNiveau}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <div className="relative" ref={dropdownRef}>
                 <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Matière</label>
@@ -521,11 +580,19 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
                         onChange={(e) => {
                           setSearchMatiere(e.target.value);
                           const query = e.target.value.toLowerCase();
-                          setFilteredMatieres(
-                            matieres.filter((m) =>
-                              m.nomMatiere.toLowerCase().includes(query)
-                            )
+                          const selectedId = formData.niveau?.idNiveau;
+                          let filtered = matieres;
+                          if (selectedId) {
+                            const selectedNiv = niveaux.find((n) => n.idNiveau === selectedId);
+                            if (selectedNiv) {
+                              const code = selectedNiv.codeNiveau;
+                              filtered = matieres.filter((m) => m.niveau?.codeNiveau === code);
+                            }
+                          }
+                          filtered = filtered.filter((m) =>
+                            m.nomMatiere.toLowerCase().includes(query)
                           );
+                          setFilteredMatieres(filtered);
                         }}
                         placeholder="🔍 Rechercher une matière..."
                         className="w-full bg-emerald-900/40 text-white rounded-xl px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-400 outline-none text-sm transition-all duration-200"
@@ -541,10 +608,9 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
                             : ""
                         }`}
                         onClick={() => {
-                          setFormData((prev) => ({ ...prev, matiere: m }));
+                          setFormData((prev) => ({ ...prev, matiere: { ...m, niveau: prev.niveau } }));
                           updateShowDropdown(false);
                           setSearchMatiere("");
-                          setFilteredMatieres(matieres);
                         }}
                       >
                         {m.nomMatiere}
@@ -559,30 +625,6 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
                   </div>
                 )}
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">
-                Niveau
-              </label>
-              <select
-                value={formData.niveau?.idNiveau ?? ""}
-                onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
-                    niveau: { ...p.niveau, idNiveau: Number(e.target.value) },
-                  }))
-                }
-                required
-                className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
-              >
-                <option value="">-- Sélectionner --</option>
-                {niveaux.map((n) => (
-                  <option key={n.idNiveau} value={n.idNiveau}>
-                    {n.codeNiveau}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
 
@@ -624,14 +666,71 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
             <p className="text-xs sm:text-sm text-gray-400 italic bg-emerald-950/20 p-2 rounded-2xl">Aucun enseignant associé à cette matière.</p>
           )}
 
-          {/* Date + Durée */}
-          <div className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-2">
+          {/* Section Parcours */}
+          <div>
+            <label className="block text-sm font-medium text-emerald-200 mb-2">
+              Parcours concernés :
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {parcours.map((p) => (
+                <label
+                  key={p.idParcours}
+                  className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-xl border-2 transition-all duration-200 text-sm font-medium ${
+                    selectedParcoursIds.includes(p.idParcours ?? 0)
+                      ? "bg-emerald-600/70 border-emerald-400 text-white"
+                      : "bg-emerald-950/50 border-emerald-700 hover:bg-emerald-800/40 text-gray-200"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedParcoursIds.includes(p.idParcours ?? 0)}
+                    onChange={() => toggleParcours(p.idParcours ?? 0)}
+                    className="accent-emerald-500"
+                  />
+                  {p.codeParcours}
+                </label>
+              ))}
+            </div>
+            {selectedParcoursIds.length === 0 && (
+              <p className="text-xs text-red-400 mt-1 italic">Veuillez sélectionner au moins un parcours.</p>
+            )}
+          </div>
+
+          {/* Date */}
+          <div className="grid grid-cols-1 gap-2.5 sm:gap-3">
+            <div className="flex justify-center sm:justify-start">
+              <div className="w-full sm:w-1/2">
+                <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Date examen</label>
+                <input
+                  type="date"
+                  value={formData.dateExamen ?? ""}
+                  onChange={(e) => handleChangeSimple("dateExamen", e.target.value)}
+                  required
+                  className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Heures + Durée */}
+          <div ref={heuresRef} className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-3">
             <div>
-              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Date examen</label>
+              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Heure début</label>
               <input
-                type="date"
-                value={formData.dateExamen ?? ""}
-                onChange={(e) => handleChangeSimple("dateExamen", e.target.value)}
+                type="datetime-local"
+                value={formData.heureDebut ?? ""}
+                onChange={(e) => handleChangeSimple("heureDebut", e.target.value)}
+                required
+                className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Heure fin</label>
+              <input
+                type="datetime-local"
+                value={formData.heureFin ?? ""}
+                onChange={(e) => handleChangeSimple("heureFin", e.target.value)}
                 required
                 className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
               />
@@ -661,69 +760,38 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
             </div>
           </div>
 
-          {/* Heures */}
-          <div ref={heuresRef} className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Heure début</label>
-              <input
-                type="datetime-local"
-                value={formData.heureDebut ?? ""}
-                onChange={(e) => handleChangeSimple("heureDebut", e.target.value)}
-                required
-                className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Heure fin</label>
-              <input
-                type="datetime-local"
-                value={formData.heureFin ?? ""}
-                onChange={(e) => handleChangeSimple("heureFin", e.target.value)}
-                required
-                className="w-full border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
-              />
-            </div>
-          </div>
-
           {/* Salles */}
           <div ref={sallesRef}>
-            <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Salles</label>
+            <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Salles <span className="text-red-400">*</span></label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {salles.map((s) => (
-                <label
-                  key={s.numeroSalle}
-                  className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-2xl cursor-pointer border-2 border-emerald-500/20 transition-all duration-200 text-xs font-medium hover:shadow-lg active:scale-95 ${
-                    selectedSalles.includes(s.numeroSalle)
-                      ? "bg-emerald-600/60 border-emerald-400"
-                      : "bg-emerald-950/40 hover:bg-emerald-800/30"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSalles.includes(s.numeroSalle)}
-                    onChange={() => toggleSalle(s.numeroSalle)}
-                    className="rounded"
-                  />
-                  {s.numeroSalle}
-                </label>
-              ))}
+              {salles.map((s) => {
+                const isDisabled = disabledSalles.includes(s.numeroSalle);
+                const isSelected = selectedSalles.includes(s.numeroSalle);
+                return (
+                  <label
+                    key={s.numeroSalle}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-2xl cursor-pointer border-2 border-emerald-500/20 transition-all duration-200 text-xs font-medium hover:shadow-lg active:scale-95 ${
+                      isSelected
+                        ? "bg-emerald-600/60 border-emerald-400"
+                        : "bg-emerald-950/40 hover:bg-emerald-800/30"
+                    } ${isDisabled ? "opacity-70 blur-sm pointer-events-none" : ""}`}
+                    title={isDisabled ? "Salle occupée à l'heure choisie" : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSalle(s.numeroSalle)}
+                      disabled={isDisabled}
+                      className="rounded"
+                    />
+                    {s.numeroSalle}
+                  </label>
+                );
+              })}
             </div>
-          </div>
-
-          {/* Session */}
-          <div>
-            <label className="block text-xs sm:text-sm font-semibold text-emerald-200 mb-1.5">Session</label>
-            <select
-              value={formData.session ?? ""}
-              onChange={(e) => handleChangeSimple("session", e.target.value)}
-              className="w-full sm:w-1/2 border-2 border-emerald-500/40 bg-emerald-950/70 rounded-2xl p-2 mt-1 text-sm transition-all duration-200 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none hover:shadow-lg active:scale-95"
-            >
-              <option value="">-- Choisir une session --</option>
-              <option value="Matin">Matin</option>
-              <option value="Après-midi">Après-midi</option>
-              <option value="Soir">Soir</option>
-            </select>
+            {disabledSalles.length > 0 && (
+              <p className="text-xs text-yellow-300 mt-1 italic">⚠️ {disabledSalles.length} salle(s) indisponible(s) à cette heure.</p>
+            )}
           </div>
 
           {error && (
@@ -757,83 +825,6 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
           </div>
         </form>
       </div>
-
-      {/* Popup conflit */}
-      <AnimatePresence>
-        {showConflitPopup && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-60 flex items-center justify-center p-2 sm:p-4"
-          >
-            <div
-              className="absolute inset-0 bg-black/70"
-              onClick={() => setShowConflitPopup(false)}
-            />
-
-            <motion.div
-              initial={{ scale: 0.9, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              transition={{ duration: 0.18 }}
-              className="relative bg-gradient-to-br from-red-900 via-red-800 to-rose-900 text-white rounded-3xl shadow-2xl max-w-sm sm:max-w-md w-full p-3 sm:p-4 md:p-6 max-h-[80vh] border border-red-600/30 backdrop-blur-md overflow-y-auto z-10"
-            >
-              <div className="flex justify-between items-center mb-3 sm:mb-4 text-red-100 drop-shadow-sm">
-                <h3 className="text-lg sm:text-xl font-bold">⚠️ Attention ! Chevauchement détecté</h3>
-                <button
-                  className="text-red-200 hover:text-red-100 text-sm"
-                  onClick={() => setShowConflitPopup(false)}
-                >
-                  ✖
-                </button>
-              </div>
-
-              <div className="text-sm text-red-200 max-h-60 overflow-y-auto space-y-2.5">
-                {conflits.map((c, idx) => (
-                  <div key={idx} className="p-2.5 rounded-2xl bg-red-950/50 border border-red-600/30">
-                    <p className="text-xs font-medium">
-                      Conflit avec <span className="font-semibold text-red-100">{c.matiere}</span> en salle <span className="font-semibold text-red-100">{c.salle}</span> le <span className="font-semibold text-red-100">{c.date}</span> de <span className="font-semibold text-red-100">{c.debut}</span> à <span className="font-semibold text-red-100">{c.fin}</span>.
-                    </p>
-                    <p className="text-xs text-red-300 mt-1 italic">Solution : changez de salle ou ajustez les heures.</p>
-                  </div>
-                ))}
-              </div>
-
-              {hasValidSuggestion && (
-                <div className="mt-3 p-2.5 bg-emerald-950/30 rounded-2xl border border-emerald-600/30">
-                  <p className="text-xs text-emerald-100 mb-2 font-medium">{suggestionMessage}</p>
-                  <button
-                    onClick={() => {
-                      setFormData((prev) => ({ ...prev, heureDebut: suggestedHeureDebut! }));
-                      setShowConflitPopup(false);
-                      setTimeout(() => scrollToSection(heuresRef), 300);
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-200"
-                  >
-                    Appliquer suggestion
-                  </button>
-                </div>
-              )}
-
-              {!hasValidSuggestion && suggestionMessage && (
-                <div className="mt-3 p-2.5 bg-red-950/30 rounded-2xl border border-red-600/30">
-                  <p className="text-xs text-red-300 italic">{suggestionMessage}</p>
-                </div>
-              )}
-
-              <div className="mt-3 flex flex-col sm:flex-row justify-end gap-2">
-                <button
-                  onClick={() => setShowConflitPopup(false)}
-                  className="bg-gray-600/70 hover:bg-gray-500/70 text-white px-4 py-2 rounded-2xl text-sm font-medium transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95 flex-1 sm:flex-none"
-                >
-                  Fermer
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Popup succès */}
       <AnimatePresence>

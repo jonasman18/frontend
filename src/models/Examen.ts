@@ -1,8 +1,9 @@
 
 
 export interface Examen {
-  idExamen?: number; // optionnel
+  idExamen?: number;
   matiere: {
+    niveau: any;
     idMatiere?: number;
     nomMatiere: string;
   };

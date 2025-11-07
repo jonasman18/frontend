@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+/* import React, { useEffect, useState } from "react";
 import ExamenForm from "./ExamenForm";
 import ExamenParcoursForm from "./ExamenParcoursForm";
 import { ApiService } from "../services/ApiService";
@@ -74,7 +74,7 @@ const PageExamen: React.FC = () => {
         </button>
       </div>
 
-      {/* --- Liste des examens enregistrés --- */}
+      --- Liste des examens enregistrés --- 
       <div className="bg-emerald-900/40 border border-emerald-700 rounded-xl p-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xl font-semibold text-emerald-200">
@@ -159,7 +159,7 @@ const PageExamen: React.FC = () => {
         )}
       </div>
 
-      {/* --- Modales --- */}
+       --- Modales --- 
       {showExamenForm && (
         <ExamenForm
           onSave={handleExamenSaved} // ✅ Async Promise<Examen>
@@ -179,3 +179,4 @@ const PageExamen: React.FC = () => {
 };
 
 export default PageExamen;
+*/

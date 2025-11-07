@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Matiere } from "../models/Matiere";
+import type { Niveau } from "../models/Niveau";
+import { ApiService } from "../services/ApiService";
 import ModalForm from "./ModalForm";
 
 interface MatiereFormProps {
@@ -10,12 +12,22 @@ interface MatiereFormProps {
 
 const MatiereForm: React.FC<MatiereFormProps> = ({ matiere, onSave, onClose }) => {
   const [formData, setFormData] = useState<Matiere>(
-    matiere ?? { idMatiere: undefined, nomMatiere: "" }
+    matiere ?? { nomMatiere: "", niveau: undefined }
   );
+  const [niveaux, setNiveaux] = useState<Niveau[]>([]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    ApiService.getNiveaux().then(setNiveaux);
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (name === "niveau") {
+      const niv = niveaux.find((n) => n.idNiveau === Number(value));
+      setFormData((prev) => ({ ...prev, niveau: niv }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -30,16 +42,40 @@ const MatiereForm: React.FC<MatiereFormProps> = ({ matiere, onSave, onClose }) =
       onSubmit={handleSubmit}
       submitLabel={formData.idMatiere ? "Mettre à jour" : "Enregistrer"}
     >
-      <div>
-        <label className="block text-sm font-medium">Nom de la Matière</label>
-        <input
-          type="text"
-          name="nomMatiere"
-          value={formData.nomMatiere}
-          onChange={handleChange}
-          required
-          className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
-        />
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-emerald-300">
+            Nom de la Matière
+          </label>
+          <input
+            type="text"
+            name="nomMatiere"
+            value={formData.nomMatiere}
+            onChange={handleChange}
+            required
+            className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-emerald-300">
+            Niveau
+          </label>
+          <select
+            name="niveau"
+            value={formData.niveau?.idNiveau ?? ""}
+            onChange={handleChange}
+            required
+            className="w-full border border-emerald-600 bg-emerald-900 text-white rounded-md p-2 mt-1 focus:ring-2 focus:ring-emerald-400"
+          >
+            <option value="">-- Choisir un niveau --</option>
+            {niveaux.map((n) => (
+              <option key={n.idNiveau} value={n.idNiveau}>
+                {n.codeNiveau}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </ModalForm>
   );

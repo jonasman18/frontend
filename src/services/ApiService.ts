@@ -88,7 +88,7 @@ export class ApiService {
   static apiClient: any;
   static API_URL: any;
   // ----------------- EXAMENS -----------------
-  static getExamens(): Promise<Examen[]> {
+  static getExamens(p0: { page: number; size: number; }): Promise<Examen[]> {
     return axios.get(`${API_BASE_URL}/examens`).then((res) => res.data);
   }
 
@@ -600,5 +600,12 @@ static getPlanningSurveillancePaged(page: number, size: number): Promise<{
   return axios.get(`${API_BASE_URL}/planning-surveillance?page=${params.get('page')}&size=${params.get('size')}`)
     .then(res => res.data);
 }
+
+static getMatieresByNiveau(idNiveau: number): Promise<Matiere[]> {
+  return axios
+    .get(`${API_BASE_URL}/matieres/niveau/${idNiveau}`)
+    .then((res) => res.data);
+}
+
 
 }
