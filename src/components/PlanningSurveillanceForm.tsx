@@ -45,7 +45,7 @@ const PlanningSurveillanceForm: React.FC<PlanningSurveillanceFormProps> = ({
   // Charger les données initiales
   useEffect(() => {
     Promise.all([
-      ApiService.getExamens(),
+      ApiService.getUpcomingExamens(),
       ApiService.getSalles(),
       ApiService.getSurveillants(),
     ]).then(([e, s, sv]) => {

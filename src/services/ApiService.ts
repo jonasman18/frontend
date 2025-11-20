@@ -608,4 +608,45 @@ static getMatieresByNiveau(idNiveau: number): Promise<Matiere[]> {
 }
 
 
+
 }
+
+// ----------------- AUTHENTIFICATION -----------------
+
+
+// src/services/ApiService.ts (corrigé pour retourner directement User, sans wrapper AuthResponse)
+// ----------------- AUTHENTIFICATION -----------------
+// src/services/ApiService.ts (corrigé pour retourner directement User, sans wrapper AuthResponse)
+import type { User } from '../models/User';
+
+// Interface pour les credentials d'auth
+interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+// Service d'auth (fetch ; adaptez à axios si utilisé)
+export class AuthService {
+  private readonly API_BASE_URL = 'http://localhost:8080/api'; // Ajustez l'URL de votre backend
+
+  async login(credentials: LoginCredentials): Promise<User> {
+    const response = await fetch(`${this.API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    });
+
+    if (!response.ok) {
+      throw new Error('Échec de l\'authentification');
+    }
+
+    // Backend renvoie directement User (JSON), donc pas de wrapper
+    return await response.json() as User; // Cast direct en User
+  }
+}
+
+// Export singleton
+export const AuthServiceInstance = new AuthService(); // Renommé pour éviter confusion
+export default AuthServiceInstance;

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useDeferredValue } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ApiService } from "../services/ApiService";
+import { useAuth } from "../context/AuthContext"; // ← Ajout : import du contexte d'auth
 import type { Examen } from "../models/Examen";
 import type { ExamenParcours } from "../models/ExamenParcours";
 import ExamenForm from "./ExamenForm";
@@ -30,6 +31,7 @@ const formatHeures = (debut?: string, fin?: string): string => {
 };
 
 const ExamenList: React.FC = () => {
+  const { isAdmin } = useAuth(); // ← Ajout : récupération du rôle admin
   const [examens, setExamens] = useState<Examen[]>([]);
   const [examParcours, setExamParcours] = useState<Record<number, string[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -124,22 +126,39 @@ const ExamenList: React.FC = () => {
     });
   }, [sortedExamens]);
 
-  // 🗑️ Suppression
+  // 🗑️ Suppression (gardé pour admin seulement)
   const handleDelete = async (id?: number) => {
-    if (!id) return;
+    if (!id || !isAdmin) { // ← Ajout : blocage si non-admin
+      if (!isAdmin) alert("❌ Mode lecture seule : vous ne pouvez pas supprimer.");
+      return;
+    }
     if (confirm("Supprimer cet examen ?")) {
       await ApiService.deleteExamen(id);
       loadExamens(true);
     }
   };
 
-  // 💾 Sauvegarde
+  // 💾 Sauvegarde (gardé pour admin seulement)
   const handleSave = async (examen: Examen): Promise<Examen> => {
+    if (!isAdmin) { // ← Ajout : blocage si non-admin
+      alert("❌ Mode lecture seule : vous ne pouvez pas modifier.");
+      throw new Error("Non autorisé");
+    }
     const saved = await ApiService.saveExamen(examen);
     await loadExamens(true);
     setShowForm(false);
     setEditing(null);
     return saved;
+  };
+
+  // Édition (gardé pour admin seulement)
+  const handleEdit = (examen: Examen) => {
+    if (!isAdmin) { // ← Ajout : blocage si non-admin
+      alert("❌ Mode lecture seule : vous ne pouvez pas modifier.");
+      return;
+    }
+    setEditing(examen);
+    setShowForm(true);
   };
 
   return (
@@ -151,12 +170,20 @@ const ExamenList: React.FC = () => {
     >
       {/* Barre supérieure */}
       <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
-        <h1
-          className="text-2xl font-bold text-emerald-300 cursor-pointer hover:text-emerald-400 transition"
-          onClick={() => setFullscreen(!fullscreen)}
-        >
-          📘 Examens {fullscreen && "(plein écran)"}
-        </h1>
+        <div className="flex items-center gap-3"> {/* ← Groupé pour badge */}
+          <h1
+            className="text-2xl font-bold text-emerald-300 cursor-pointer hover:text-emerald-400 transition"
+            onClick={() => setFullscreen(!fullscreen)}
+          >
+            📘 Examens {fullscreen && "(plein écran)"}
+          </h1>
+          {/* ← Ajout : Badge lecture seule si non-admin */}
+          {!isAdmin && (
+            <span className="px-3 py-1 bg-gray-600 text-gray-200 rounded-full text-sm font-medium">
+               Mode lecture seule
+            </span>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2 items-center">
           <select
@@ -202,15 +229,18 @@ const ExamenList: React.FC = () => {
             {viewMode === "table" ? "🗂️ Vue cartes" : "📋 Vue tableau"}
           </motion.button>
 
-          <button
-            onClick={() => {
-              setEditing(null);
-              setShowForm(true);
-            }}
-            className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-md font-semibold"
-          >
-            ➕ Nouvel Examen
-          </button>
+          {/* ← Condition : Bouton Nouvel Examen seulement pour admin */}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setEditing(null);
+                setShowForm(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-md font-semibold"
+            >
+              ➕ Nouvel Examen
+            </button>
+          )}
         </div>
       </div>
 
@@ -261,21 +291,25 @@ const ExamenList: React.FC = () => {
                                   )}
                                 </div>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={() => {
-                                      setEditing(ex);
-                                      setShowForm(true);
-                                    }}
-                                    className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md text-sm"
-                                  >
-                                    ✏
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(ex.idExamen)}
-                                    className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-md text-sm"
-                                  >
-                                    🗑
-                                  </button>
+                                  {/* ← Condition : Boutons actions seulement pour admin */}
+                                  {isAdmin ? (
+                                    <>
+                                      <button
+                                        onClick={() => handleEdit(ex)} // ← Appel handler conditionné
+                                        className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md text-sm"
+                                      >
+                                        ✏
+                                      </button>
+                                      <button
+                                        onClick={() => handleDelete(ex.idExamen)}
+                                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-md text-sm"
+                                      >
+                                        🗑
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-500 text-sm px-3 py-1">👁️ Lecture</span>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -291,7 +325,7 @@ const ExamenList: React.FC = () => {
             </div>
           </motion.div>
         ) : (
-          // Vue cartes
+          // Vue cartes (pas d'actions, donc OK pour lecture seule)
           <motion.div 
             key="cards" 
             initial={{ opacity: 0, y: 20, scale: 0.98 }} 
@@ -332,7 +366,7 @@ const ExamenList: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Modales */}
+      {/* Modales (seulement si admin, mais conditionnée en amont) */}
       <AnimatePresence>
         {showForm && (
           <motion.div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">

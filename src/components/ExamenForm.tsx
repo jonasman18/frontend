@@ -478,7 +478,7 @@ const ExamenForm: React.FC<ExamenFormProps> = ({ examen, onSave, onClose }) => {
       setTimeout(() => {
         setShowSuccessPopup(false);
         onClose();
-      }, 3000);
+      }, 10000);
     } catch (err) {
       console.error("Erreur save:", err);
       setError("Erreur lors de la sauvegarde. Veuillez réessayer.");
